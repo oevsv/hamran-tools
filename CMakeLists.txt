@@ -5,8 +5,8 @@
 cmake_minimum_required(VERSION 3.5)
 cmake_policy(VERSION 3.5...3.27)
 
-project(wran-tools
-  VERSION 0.4.0
+project(hamran-tools
+  VERSION 0.5.0
   LANGUAGES CXX
 )
 
@@ -54,23 +54,23 @@ target_link_libraries(hrrx-sim
   Boost::program_options
 )
 
-add_executable(hrdebug)
+#add_executable(hrdebug)
 
-target_sources(hrdebug PRIVATE
-  hamranfrm.cpp
-  hamranfrm.hpp
-  hrdebug.cpp
-  config.hpp.in
-)
+#target_sources(hrdebug PRIVATE
+#  hamranfrm.cpp
+#  hamranfrm.hpp
+#  hrdebug.cpp
+#  config.hpp.in
+#)
 
-target_link_libraries(hrdebug
-    PRIVATE
-    LiquidDSP
-)
+#target_link_libraries(hrdebug
+#    PRIVATE
+#    LiquidDSP
+#)
 
-install(TARGETS
-  hrdebug
-)
+#install(TARGETS
+#  hrdebug
+#)
 
 add_executable(hrbeacon-txrx-sim)
 
@@ -262,4 +262,6 @@ install(TARGETS hrrx-hackrf)
 
 endif(pkgcfg_lib_HackRF_hackrf)
 endif(PkgConfig_FOUND)
+
+set(CPACK_GENERATOR "ZIP")
 include(CPack)

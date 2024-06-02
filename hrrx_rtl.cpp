@@ -136,6 +136,7 @@ void receive(stop_token stoken, rtlsdr_dev_t* dev) {
 int main(int argc, char* argv[]) {
 
   signal(SIGINT, signal_handler); // install handler to catch ctrl-c
+  signal(SIGTERM, signal_handler);
 
   rtlsdr_dev_t* dev = nullptr;
 
@@ -152,7 +153,7 @@ int main(int argc, char* argv[]) {
         ("version", "Print version.")
         ("freq", value<double>(&freq)->default_value(53e6),
          "Center frequency.")
-        ("cpf",  value<size_t>()->default_value(12),
+        ("cpf",  value<size_t>()->default_value(5),
          "Cyclic prefix len: 0...50")
         ("agc",  value<bool>(&agc)->implicit_value(true)->default_value(false),
          "Automatic gain control")

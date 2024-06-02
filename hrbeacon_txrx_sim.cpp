@@ -41,7 +41,7 @@ using std::exception;
 using std::map;
 
 #include <complex>
-using std::complex, std::exp, std::conj;
+using std::complex, std::exp, std::conj, std::real;
 using namespace std::literals::complex_literals;
 
 #include <string>
@@ -54,7 +54,7 @@ using std::vector;
 using std::random_device, std::mt19937, std::uniform_int_distribution;
 
 #include <algorithm>
-using std::copy, std::fill_n;
+using std::max, std::copy, std::fill_n;
 
 #include <boost/format.hpp>
 using boost::format, boost::str;
@@ -74,23 +74,42 @@ class hrframegen_stats : public hrframegen {
   vector<uint8_t> msg;
 
 public:
+  size_t count;
+  double avgpwr;
+  double peakpwr;
+
   hrframegen_stats(double sample_rate,
                    size_t prefix_fraction, size_t phy_mode,
                    size_t packet_size = 256, uint32_t seed = 230361)
     : hrframegen(sample_rate, -12.0, prefix_fraction, phy_mode),
-      seed(seed), msggen(seed), symbol(0, 255), offset(0), msg(packet_size) {
+      seed(seed), msggen(seed), symbol(0, 255), offset(0), msg(packet_size),
+      count(0), avgpwr(0), peakpwr(0) {
   }
 
   void assemble(bool restart = false) {
     if (restart) {
         msggen.seed(seed);
         offset = 0;
+        count = 0;
+        avgpwr = 0;
+        peakpwr = 0;
       }
     uint64_t header = offset;
     for (size_t n=0; n<msg.size(); ++n, ++offset) msg[n] = symbol(msggen);
     hrframegen::assemble(reinterpret_cast<const unsigned char*>(&header),
                          msg.data(), msg.size());
   }
+
+  bool write(complex<float>* buffer, size_t buffer_len) {
+    bool last = hrframegen::write(buffer, buffer_len);
+    for (size_t i = 0; i < buffer_len; ++i) {
+        double pwr  = real(buffer[i]*conj(buffer[i]));
+        peakpwr = max(pwr, peakpwr);
+        avgpwr += (pwr - avgpwr)/++count;
+      }
+    return last;
+  }
+
 };
 
 class hrframesync_stats : public hrframesync {
@@ -149,8 +168,8 @@ int main(int argc, char* argv[])
     opts.add_options()
         ("help,h", "Print usage information.")
         ("version", "Print version.")
-        ("cpf",        value<size_t>()->default_value(12), "Cyclic prefix len: 0...50")
-        ("phy",        value<size_t>()->default_value(1),  "Physical layer mode: 1 ... 14")
+        ("cpf",        value<size_t>()->default_value(5), "Cyclic prefix len: 0...50")
+        ("phy",        value<size_t>()->default_value(2),  "Physical layer mode: 1 ... 14")
         ("packsiz,s",  value<size_t>()->default_value(256), "Packet size")
         ;
 
@@ -158,7 +177,7 @@ int main(int argc, char* argv[])
     variables_map vm;
     store(parse_command_line(argc, argv, opts), vm);
     if (vm.count("help")) {
-        cout << "wrbeacon beacon generator for WRAN project." << endl;
+        cout << "simulator for the hamran project." << endl;
         cout << opts << endl;
         return EXIT_SUCCESS;
     }
@@ -194,22 +213,21 @@ int main(int argc, char* argv[])
       cout << endl;
     }
 
-
     // trx and rx buffers
     vector<complex<float>> tx_buffer(512);
     vector<complex<float>> rx_buffer(512);
 
-    cout << "     SNR,   frames,  headers,   payval,  bytesrx, bytesval,    bitsval,   samples,     kbps" << endl;
-    for (float SNRdB = 0.0; SNRdB < 40.0; SNRdB += 3) {
+    cout << "    peak,     avg,   noise,      SNR,   frames,  headers,   payval,  bytesrx, bytesval,    bitsval,   samples,     kbps" << endl;
+    for (float noise_dB = -6; noise_dB >= -42.0; noise_dB -= 3) {
 
         hrframegen_stats fg(sample_rate, cpf, phy_mode, packet_size, seed);
         hrframesync_stats fs(sample_rate, cpf, seed);
 
         channel_cccf channel = channel_cccf_create();
         // keep the signal at constant level, but lower the noise fllor
-        channel_cccf_add_awgn(channel, -SNRdB, SNRdB);
+        channel_cccf_add_awgn(channel, noise_dB, -noise_dB);
 
-        for (size_t f=0; f<10'000; ++f) { // frame loop
+        for (size_t f=0; packet_size*f<256*10'000; ++f) { // frame loop
             // create a message frame, restart on frame number 0
             fg.assemble(0 == f);
 
@@ -235,8 +253,13 @@ int main(int argc, char* argv[])
 //            fs.execute(rx_buffer.data(), rx_buffer.size());
           }
         framedatastats_s s = fs.get_framedatastats();
-        cout << format("%8.1f, %8d, %8d, %8d, %8d, %8d, %10d, %8d, %8.3f\n")
-                % SNRdB
+        float peak_dB = 10.0/log(10)*log(fg.peakpwr);
+        float avg_dB = 10.0/log(10)*log(fg.avgpwr);
+        cout << format("%8.1f, %8.1f, %8.1f, %8.1f, %8d, %8d, %8d, %8d, %8d, %10d, %8d, %8.3f\n")
+                % peak_dB
+                % avg_dB
+                % noise_dB
+                % (avg_dB-noise_dB)
                 % s.num_frames_detected
                 % s.num_headers_valid
                 % s.num_payloads_valid
@@ -245,7 +268,6 @@ int main(int argc, char* argv[])
                 % fs.num_bits_valid
                 % fs.num_samples
                 % (1e-3*(sample_rate*fs.num_payloadbits_valid)/fs.num_samples);
-
         channel_cccf_destroy(channel);
     }
 
