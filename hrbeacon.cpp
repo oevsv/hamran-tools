@@ -263,12 +263,12 @@ int main(int argc, char* argv[])
         ("help,h", "Print usage information.")
         ("version", "Print version.")
         ("freq",     value<double>()->default_value(53e6), "Center frequency in Hz.")
-        ("txpwr",    value<int>()->default_value(0),       "Tx Pwr.of fullscale sine in dBm (-26dBm ... 10dBm)")
-        ("sinepwr",  value<double>()->default_value(0),    "Sine gain in dBFS")
+        ("txpwr",    value<int>()->default_value(11),      "Tx Pwr.of fullscale sine in dBm (-26dBm ... 10dBm)")
+        ("sinepwr",  value<double>()->default_value(-12),  "Sine gain in dBFS")
         ("ofdmpwr",  value<double>()->default_value(-12),  "OFDM gain in dBFS")
         ("tone",     value<double>()->default_value(0),    "Modulation freqeuncy in Hz.")
         ("duration", value<double>()->default_value(10.0), "Duration of beacon signals in seconds")
-        ("cpf",      value<size_t>()->default_value(12),   "Cyclic prefix len: 0...50")
+        ("cpf",      value<size_t>()->default_value(5),    "Cyclic prefix len: 0...50")
         ("phy",      value<size_t>()->default_value(2),    "Physical layer mode: 1 ... 14")
         ;
 
@@ -287,8 +287,8 @@ int main(int argc, char* argv[])
     notify(vm);
 
     if (vm.count("help")) {
-        cout << "Beacon generator for WRAN project." << endl;
-        cout << "Usage: wrbeacon [options] [message]" << endl;
+        cout << "Beacon generator for HAMRAN project." << endl;
+        cout << "Usage: hrbeacon [options] [message]" << endl;
         cout << "  Interactive mode if message is omitted." << endl;
         cout << opts << endl;
         return EXIT_SUCCESS;

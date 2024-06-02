@@ -64,6 +64,7 @@ int receive_cb(hackrf_transfer* transfer) {
 int main(int argc, char* argv[]) {
 
   signal(SIGINT, signal_handler); // install handler to catch ctrl-c
+  signal(SIGTERM, signal_handler);
 
   hackrf_device*  dev = nullptr;
 
@@ -76,7 +77,7 @@ int main(int argc, char* argv[]) {
         ("vgagain", value<int>()->default_value(30),     "Baseband gain 0 ... 62dB in 2dB steps")
         ("lnagain", value<int>()->default_value(14),     "IF gain 0 ... 47dB in 1dB steps")
         ("ampgain", value<int>()->default_value(11),     "IF gain 0 or 11dB")
-        ("cpf",     value<size_t>()->default_value((12), "Cyclic prefix len: 0...50"))
+        ("cpf",     value<size_t>()->default_value(5),   "Cyclic prefix len: 0...50")
         ;
 
     variables_map vm;

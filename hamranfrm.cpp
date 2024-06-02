@@ -39,7 +39,7 @@ const double hrframe::frame_len       =    10e-3; // s
 const double hrframe::bandwidth       = 2e6*0.92; // Hz
 const double hrframe::carrier_spacing =      4e3; // Hz
 const size_t hrframe::prefix_divider  =       50;
-const size_t hrframe::pilot_fraction  =        5;
+const size_t hrframe::pilot_fraction  =       40; // 5
 
 const hrframegen::phy_t hrframegen::phy_prop[] =
 {

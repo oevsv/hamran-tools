@@ -145,6 +145,7 @@ void receive(stop_token stoken, lms_stream_t& rx_stream) {
 int main(int argc, char* argv[]) {
 
   signal(SIGINT, signal_handler); // install handler to catch ctrl-c
+  signal(SIGTERM, signal_handler);
 
   max_LogLevel = lime::LOG_LEVEL_INFO;
   lime::registerLogHandler(&limeSuiteLogHandler);
@@ -159,7 +160,7 @@ int main(int argc, char* argv[]) {
         ("help,h", "Print usage information.")
         ("version", "Print version.")
         ("freq", value<double>()->default_value(53e6), "Center frequency.")
-        ("cpf",  value<size_t>()->default_value(12),   "Cyclic prefix len: 0...50")
+        ("cpf",  value<size_t>()->default_value(5),   "Cyclic prefix len: 0...50")
         ("gain", value<double>()->default_value(0.7),  "Gain factor 0 ... 1.0")
         ;
 
