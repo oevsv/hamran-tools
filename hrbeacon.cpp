@@ -185,6 +185,15 @@ void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
               tx_buffer[n] = sine_amplitude*(y*=w);
           LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), nullptr, 1000);
         }
+      // Send unmodulated carrier for duration seconds.
+      for (size_t n=0; n<size_t(duration*sample_rate/tx_buffer.size()); ++n) {
+          if (stoken.stop_requested())
+            break;
+          for (size_t n = 0; n<tx_buffer.size(); ++n)
+              tx_buffer[n] = 0.0f;
+          LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), nullptr, 1000);
+        }
+
       // Send OFDM frames for 4*duration seconds.
       tx_timestamp = rx_timestamp;
       for (size_t n=0; n<size_t(4*duration/fg.frame_len); ++n) {
@@ -207,8 +216,6 @@ void transmit(stop_token stoken, lms_stream_t& tx_stream, uint64_t start_time) {
               while (not last) {
                   for (size_t i=0; i<tx_buffer.size(); ++i) sample_max = max(sample_max, abs(tx_buffer[i]));
                   LMS_SendStream(&tx_stream, tx_buffer.data(), tx_buffer.size(), &meta, 1000);
-                  // TODO: I do not yet understand the write function completely.
-                  // The documentaion and source of liquid appear incomplete.
                   last = fg.write(tx_buffer.data(), tx_buffer.size());
                   meta.waitForTimestamp = false;
                   meta.flushPartialPacket = false;
@@ -266,7 +273,7 @@ int main(int argc, char* argv[])
         ("txpwr",    value<int>()->default_value(11),      "Tx Pwr.of fullscale sine in dBm (-26dBm ... 10dBm)")
         ("sinepwr",  value<double>()->default_value(-12),  "Sine gain in dBFS")
         ("ofdmpwr",  value<double>()->default_value(-12),  "OFDM gain in dBFS")
-        ("tone",     value<double>()->default_value(0),    "Modulation freqeuncy in Hz.")
+        ("tone",     value<double>()->default_value(1e3),  "Modulation freqeuncy in Hz.")
         ("duration", value<double>()->default_value(10.0), "Duration of beacon signals in seconds")
         ("cpf",      value<size_t>()->default_value(5),    "Cyclic prefix len: 0...50")
         ("phy",      value<size_t>()->default_value(2),    "Physical layer mode: 1 ... 14")
@@ -325,7 +332,7 @@ int main(int argc, char* argv[])
     sinepwr  = vm["sinepwr"].as<double>();
     ofdmpwr  = vm["ofdmpwr"].as<double>();
 
-    cout << "wrbeacon. Version " PROJECT_VER << endl;
+    cout << "hrbeacon. Version " PROJECT_VER << endl;
 
     cout << "Parameters:" << endl;
     cout << format("Freq:          %g MHz\n")     % (1e-6*freq);
