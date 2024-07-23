@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.5)
 cmake_policy(VERSION 3.5...3.27)
 
 project(hamran-tools
-  VERSION 0.5.0
+  VERSION 0.5.1
   LANGUAGES CXX
 )
 
