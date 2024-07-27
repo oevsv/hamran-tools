@@ -162,22 +162,6 @@ if (LimeSuite_FOUND)
     Boost::program_options
   )
 
-#  add_executable(hrbeacon)
-
-#  target_sources(hrbeacon PRIVATE
-#    hamranfrm.cpp
-#    hamranfrm.hpp
-#    hrbeacon.cpp
-#    config.hpp.in
-#  )
-
-#  target_link_libraries(hrbeacon
-#    PRIVATE
-#    LimeSuite
-#    LiquidDSP
-#    Boost::program_options
-#  )
-
   add_executable(hrrx-lime)
 
   target_sources(hrrx-lime PRIVATE
@@ -195,12 +179,28 @@ if (LimeSuite_FOUND)
     LimeSuite
   )
 
+  add_executable(eval-lime)
+
+  target_sources(eval-lime PRIVATE
+    evallime.cpp
+    t3dev.cpp
+    t3dev.hpp
+    config.hpp.in
+  )
+
+  target_link_libraries(eval-lime
+    PRIVATE
+   LimeSuite
+  )
+
+
   install(TARGETS
     siggen-lime
     gpio-lime
     hrbeacon
     hrrx-lime
     cwbeacon
+    eval-lime
   )
 
 endif(LimeSuite_FOUND)
