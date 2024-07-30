@@ -8,6 +8,8 @@
 using std::vector;
 using std::complex;
 using std::string;
+using std::size_t;
+using namespace std::literals::chrono_literals;
 
 #include <iostream>
 using std::clog;
@@ -17,6 +19,9 @@ using std::runtime_error;
 
 #include <algorithm>
 using std::clamp;
+
+#include <cstdlib>
+using std::div;
 
 #include <boost/format.hpp>
 using boost::format;
@@ -60,8 +65,13 @@ void t3dev::init(const string& level) {
   lime::registerLogHandler(&limeSuiteLogHandler);
 }
 
-t3dev::t3dev(double sample_rate, double band_width, double carrier_frequency, double txgain, double rxgain) :
-  dev(nullptr), sample_rate(sample_rate), band_width(band_width), carrier_frequency(carrier_frequency), txgain(txgain), rxgain(rxgain) {
+t3dev::t3dev(double sample_rate, double band_width, double slot_length, double carrier_frequency, double txgain, double rxgain) :
+  dev(nullptr),  current_phase(0), new_phase(0),
+  sample_rate(sample_rate), band_width(band_width),
+  slot_length(slot_length), max_phase(size_t(sample_rate*slot_length)),
+  carrier_frequency(carrier_frequency),
+  txgain(txgain), rxgain(rxgain)
+   {
 
 }
 
@@ -73,6 +83,7 @@ t3dev::~t3dev() {
 // Open device specified by id or list all devices
 // and open first available if id is empty.
 void t3dev::open(const string& id) {
+
   if (id.empty()) {
       int numdev = LMS_GetDeviceList(nullptr);
       if (0 != numdev) {
@@ -104,6 +115,39 @@ void t3dev::open(const string& id) {
 
   // Initialize device and prepare streams
   LMS_Init(dev);
+
+  // Set up GPIO.
+  uint8_t gpio_dir = 0xFF;
+  LMS_GPIODirWrite(dev, &gpio_dir, 1);
+
+  uint8_t gpio_val = 0;
+  LMS_GPIODirRead(dev, &gpio_val, 1);
+  lime::debug("GPIODIR: 0x%02x", unsigned(gpio_val));
+
+  // Set up TX indicator on GPIO0.
+  // https://github.com/myriadrf/LimeSDR-Mini-v2_GW/issues/3
+  // https://discourse.myriadrf.org/t/limemini-2-2-gpio/8012/5
+  // See also HW description https://github.com/myriadrf/LimeSDR-Mini-v2
+  uint16_t fpga_val = 0;
+  LMS_ReadFPGAReg(dev, 0x00c0, &fpga_val);
+  fpga_val &= 0xfffe;
+  LMS_WriteFPGAReg(dev, 0x00c0, fpga_val);
+
+  // The maximum fpga0 can be switched on before the signal and
+  // off after the signal is 38 us. This corresponds to
+  // TX_ANT_PRE = 0 and TX_ANT_POST = 0.
+
+  // Set TXANT_PRE
+  const double on_after_start = 500e-6; // >= -38e-6;
+  fpga_val = static_cast<uint16_t>((38e-6 + on_after_start)*sample_rate);
+  LMS_WriteFPGAReg(dev, 0x0010, fpga_val);
+
+  // Set TXANT_POST
+  const double off_after_end = 500e-6; // >= -38e-6;
+  fpga_val = static_cast<uint16_t>((38e-6 + off_after_end)*sample_rate);
+  LMS_WriteFPGAReg(dev, 0x0011, fpga_val);
+
+  // Set the sample rate
   LMS_SetSampleRate(dev, sample_rate, 0);
   double host_sample_rate, rf_sample_rate;
 
@@ -167,6 +211,13 @@ void t3dev::open(const string& id) {
   LMS_StartStream(&rx_stream);
   LMS_StartStream(&tx_stream);
 
+  rx_meta.timestamp = 0;
+
+  tx_meta.waitForTimestamp = true;
+  tx_meta.flushPartialPacket = false;
+  tx_meta.timestamp = 0;
+
+  lime::info("Slot length in samples %d", max_phase);
 }
 
 void t3dev::close() {
@@ -184,9 +235,40 @@ void t3dev::close() {
 }
 
 int t3dev::receive(vector<complex<float>>& buf) {
-  return 0;
+  return LMS_RecvStream(&rx_stream, buf.data(), buf.size(), &rx_meta, 1000);
 }
 
-int t3dev::transmit(const vector<complex<float>>& buf, burst phase) {
-  return 0;
+int t3dev::receive(vector<complex<float>>& buf, size_t& phase) {
+  int count = LMS_RecvStream(&rx_stream, buf.data(), buf.size(), &rx_meta, 1000);
+  phase = rx_meta.timestamp % max_phase; // phase of first sample
+  return count;
+}
+
+// Set duplex phase from different thread. Not tested yet, OE1RSA.
+void t3dev::set_phase(size_t phase) {
+  new_phase.store(phase+1); // zero used as flag, so move away from zero
+}
+
+int t3dev::transmit(const vector<complex<float>>& buf, bool end_of_slot) {
+
+  if (tx_meta.waitForTimestamp) {
+      lms_stream_status_t status;
+      LMS_GetStreamStatus(&rx_stream, &status);
+      uint64_t next_timestamp = ((status.timestamp+current_phase)/max_phase + 2)*max_phase;
+      if (next_timestamp > tx_meta.timestamp)
+        tx_meta.timestamp = next_timestamp;
+      else
+        tx_meta.timestamp += max_phase;
+      size_t adjust_phase = new_phase.exchange(0);
+      if (adjust_phase) {
+          adjust_phase = (adjust_phase-1) % max_phase;
+          tx_meta.timestamp += (max_phase-current_phase + adjust_phase) % max_phase;
+          current_phase = adjust_phase;
+        }
+    }
+  tx_meta.flushPartialPacket = end_of_slot;
+  int count = LMS_SendStream(&tx_stream, buf.data(), buf.size(), &tx_meta, 1000);
+  tx_meta.waitForTimestamp = end_of_slot;
+
+  return count;
 }
