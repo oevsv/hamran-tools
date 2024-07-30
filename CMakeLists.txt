@@ -179,16 +179,16 @@ if (LimeSuite_FOUND)
     LimeSuite
   )
 
-  add_executable(eval-lime)
+  add_executable(tdd-eval)
 
-  target_sources(eval-lime PRIVATE
-    evallime.cpp
+  target_sources(tdd-eval PRIVATE
+    tdd_eval.cpp
     t3dev.cpp
     t3dev.hpp
     config.hpp.in
   )
 
-  target_link_libraries(eval-lime
+  target_link_libraries(tdd-eval
     PRIVATE
    LimeSuite
   )
@@ -200,7 +200,7 @@ if (LimeSuite_FOUND)
     hrbeacon
     hrrx-lime
     cwbeacon
-    eval-lime
+    tdd-eval
   )
 
 endif(LimeSuite_FOUND)
