@@ -77,5 +77,5 @@ Contributing
 The HAMRAN modem is a complex project, which is carried out by a small group of
 enthusiastic Austrian radio amateurs. We are very happy if you want to
 support our work by contributing to the code base. Just send and email to one
-of the authors or just me at **oe1rsa@oevsv.at**
+of the authors or just me at *oe1rsa@oevsv.at*
 
