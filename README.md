@@ -1,4 +1,4 @@
-SPDX-FileCopyrightText: '2025 Roland Schwarz <roland.schwarz@blackspace.at>
+SPDX-FileCopyrightText: 2025 Roland Schwarz <roland.schwarz@blackspace.at>
 
 SPDX-License-Identifier: CC-BY-3.0
 

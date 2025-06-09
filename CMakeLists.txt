@@ -14,6 +14,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(GitFlow)
 
+find_package(limesuiteng REQUIRED)
+
 add_executable(hamran-tool main.cpp)
 
 target_link_libraries(hamran-tool gitflow)
