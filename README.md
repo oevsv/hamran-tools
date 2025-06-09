@@ -2,6 +2,8 @@ SPDX-FileCopyrightText: '2025 Roland Schwarz <roland.schwarz@blackspace.at>
 
 SPDX-License-Identifier: CC-BY-3.0
 
+![HAMRAN Logo](hamran.png)
+
 # hamran-tools
 
 The HAMRAN[^1] (Highspeed Amateur Multimedia Radio Access Network) project is
@@ -44,11 +46,7 @@ to get a downstream clone.
 
 Of course you can also post a radicle issue.
 
----
-
 [^1]: HAM is also the name of a radio amateur.
-
----
 
 [1]: https://github.com/oevsv/hamran-tools
 [2]: https://radicle.xyz
