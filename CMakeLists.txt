@@ -14,7 +14,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(GitFlow)
 
-find_package(limesuiteng REQUIRED)
+find_package(kissfft 131.1.0 REQUIRED)
+find_package(limesuiteng 0.3.0 REQUIRED)
 
 add_executable(hamran-tool main.cpp)
 
