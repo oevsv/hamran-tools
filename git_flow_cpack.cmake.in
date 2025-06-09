@@ -1,0 +1,13 @@
+#
+# SPDX-FileCopyrightText: 2025 Roland Schwarz <roland.schwarz@blackspace.at>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+# read back the result from gitflow
+file (READ "${CPACK_PACKAGE_DIRECTORY}/gitflow.txt" GIT_FLOW)
+
+# embed build type, compiler, id and version in distribution file name
+set(CPACK_PACKAGE_FILE_NAME
+    "${CPACK_PACKAGE_NAME}-${GIT_FLOW}-${CPACK_SYSTEM_NAME}"
+)

@@ -1,11 +1,9 @@
-# SPDX-FileCopyrightText: 2023 Roland Schwarz <roland.schwarz@blackspace.at>
+# SPDX-FileCopyrightText: 2025 Roland Schwarz <roland.schwarz@blackspace.at>
 #
 # SPDX-License-Identifier: CC0-1.0
 #
 # This file is used to ignore files which are generated
 # ----------------------------------------------------------------------------
-scripts/beacon.py
-scripts/grcudp.py
 
 *~
 *.autosave
@@ -77,4 +75,13 @@ CMakeLists.txt.user
 # --------
 *.dll
 *.exe
+
+# Directories with generated files
+#---------------------------------
+.moc/
+.obj/
+.pch/
+.rcc/
+.uic/
+/build*/
 

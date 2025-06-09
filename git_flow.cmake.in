@@ -1,0 +1,127 @@
+#
+# SPDX-FileCopyrightText: 2025 Roland Schwarz <roland.schwarz@blackspace.at>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+function (commits_since_fork_from_develop BRANCH COUNT )
+    # The maximum history length for search of the fork point
+    # NOTE: git merge-base cannot be used for this task.
+    set (MAX_COUNT 100 )
+    execute_process (
+        COMMAND @GIT_EXECUTABLE@ -C @CMAKE_CURRENT_SOURCE_DIR@ "rev-list"
+            "--first-parent" "--max-count=${MAX_COUNT}" "develop"
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        OUTPUT_VARIABLE REV_DEVELOP
+    )
+    string (REPLACE "\n" ";" REV_DEVELOP ${REV_DEVELOP} )
+
+    execute_process (
+        COMMAND @GIT_EXECUTABLE@ -C @CMAKE_CURRENT_SOURCE_DIR@ "rev-list"
+            "--first-parent" "--max-count=${MAX_COUNT}" "${BRANCH}"
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        OUTPUT_VARIABLE REV_BRANCH
+    )
+    string ( REPLACE "\n" ";" REV_BRANCH ${REV_BRANCH} )
+
+    set (REV_COUNT 0 )
+    foreach (REV ${REV_BRANCH} )
+        list (FIND REV_DEVELOP ${REV} REV_FOUND )
+        if (REV_FOUND GREATER_EQUAL 0 )
+            break ()
+        else ()
+            math(EXPR REV_COUNT "${REV_COUNT}+1")
+        endif ()
+    endforeach ()
+
+    set (${COUNT} ${REV_COUNT} PARENT_SCOPE )
+endfunction ()
+
+execute_process (
+    COMMAND @GIT_EXECUTABLE@ -C @CMAKE_CURRENT_SOURCE_DIR@
+        "branch" "--show-current"
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    OUTPUT_VARIABLE CURRENT_BRANCH
+)
+
+message (STATUS "On branch: " "${CURRENT_BRANCH}" )
+
+execute_process (
+    COMMAND @GIT_EXECUTABLE@ -C @CMAKE_CURRENT_SOURCE_DIR@
+        "describe" "--always" "--dirty"
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    OUTPUT_VARIABLE GIT_DESCRIBE
+)
+
+if (${GIT_DESCRIBE} MATCHES ".*-dirty")
+    set (IS_DIRTY TRUE)
+else ()
+    set (IS_DIRTY FALSE)
+endif ()
+
+execute_process (
+    COMMAND @GIT_EXECUTABLE@ -C @CMAKE_CURRENT_SOURCE_DIR@
+        "rev-parse" "--short" "HEAD"
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    OUTPUT_VARIABLE HASH
+)
+
+#string(TIMESTAMP TIMESTAMP "%Y.%m.%d.%H.%M.%S.%f" UTC)
+string(TIMESTAMP TIMESTAMP "%Y.%m.%d")
+# semver must not start with leading zeros
+string(REGEX REPLACE "\\.0" "." TIMESTAMP ${TIMESTAMP})
+
+set (GIT_FLOW_TAG "v@PROJECT_VERSION@")
+string(REGEX REPLACE "[^0-9A-Za-z-]" "-" SAVE_CURRENT_BRANCH ${CURRENT_BRANCH})
+
+if (${CURRENT_BRANCH} MATCHES "release[^0-9]*([0-9.]+)$")
+    set (BRANCH_VERSION "${CMAKE_MATCH_1}")
+    if (NOT "@PROJECT_VERSION@" STREQUAL "${BRANCH_VERSION}")
+        message(WARNING "PROJECT_VERSION and branch do not match.\n"
+            "PROJECT_VERSION = @PROJECT_VERSION@\n"
+            "BRANCH_VERSION = ${BRANCH_VERSION}")
+    endif ()
+    commits_since_fork_from_develop (${CURRENT_BRANCH} NUM_FORKS )
+    string (APPEND GIT_FLOW_TAG "-rc.${NUM_FORKS}" )
+    if (IS_DIRTY )
+        string (APPEND GIT_FLOW_TAG "+dirty" )
+    endif ()
+elseif (${CURRENT_BRANCH} MATCHES "(main)|(master)" )
+    if (IS_DIRTY )
+        string(APPEND GIT_FLOW_TAG "-${TIMESTAMP}.${HASH}+dirty")
+    endif ()
+elseif (${CURRENT_BRANCH} MATCHES ".*develop.*")
+    string (APPEND GIT_FLOW_TAG "-dev.${TIMESTAMP}.${HASH}" )
+    if (IS_DIRTY )
+        string (APPEND GIT_FLOW_TAG "+dirty" )
+    endif ()
+else()
+   string (APPEND GIT_FLOW_TAG "-${SAVE_CURRENT_BRANCH}.${TIMESTAMP}.${HASH}")
+   if (IS_DIRTY )
+       string (APPEND GIT_FLOW_TAG "+dirty" )
+   endif ()
+endif()
+
+# rewrite only if changed
+if (EXISTS "gitflow.txt")
+    file(STRINGS "gitflow.txt" GIT_FLOW_TAG_PREVIOUS)
+else()
+    set(GIT_FLOW_TAG_PREVIOUS "nogit")
+endif()
+
+if (NOT EXISTS "gitflow.hpp")
+    file(WRITE gitflow.hpp
+        [[namespace gitflow{extern const char* tag;}]]
+    )
+endif()
+
+message (STATUS "Gitflow tag: " "${GIT_FLOW_TAG}" )
+
+if (NOT ${GIT_FLOW_TAG_PREVIOUS} STREQUAL ${GIT_FLOW_TAG})
+        file (WRITE gitflow.cpp
+        [[namespace gitflow {]]
+        [[const char* tag = "]] ${GIT_FLOW_TAG} [[";]]
+        [[}]]
+    )
+    file (WRITE gitflow.txt ${GIT_FLOW_TAG})
+endif()
