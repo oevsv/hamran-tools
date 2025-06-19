@@ -32,9 +32,10 @@ if(GIT_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/.git")
     endif()
 endif()
 
-# if(NOT EXISTS "${PROJECT_SOURCE_DIR}/extern/repo/CMakeLists.txt")
-#     message(FATAL_ERROR "The submodules were not downloaded! GIT_SUBMODULE was turned off or failed. Please update submodules and try again.")
-# endif()
+## Give a nice error message
+if(NOT EXISTS "${PROJECT_SOURCE_DIR}/extern/LimeSuiteNG/CMakeLists.txt")
+    message(FATAL_ERROR "The submodules were not downloaded! GIT_SUBMODULE was turned off or failed. Please update submodules and try again.")
+endif()
 
 ## Set up the external projects
 
@@ -61,6 +62,7 @@ set(SPU_TESTS OFF CACHE BOOL "preset for hamran-tools")
 set(SPU_COMPILE_STATIC_LIB ON BOOL "preset for hamran-tools")
 add_subdirectory(extern/streampu)
 add_library(spu::spu-static-lib ALIAS spu-static-lib)
+add_library(spu::rang ALIAS rang) # use the rang lib from streampu
 
 #find_package(CLI11 2.5.0 REQUIRED)
 add_subdirectory(extern/CLI11)
