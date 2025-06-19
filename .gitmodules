@@ -1,0 +1,9 @@
+[submodule "extern/LimeSuiteNG"]
+	path = extern/LimeSuiteNG
+	url = https://github.com/myriadrf/LimeSuiteNG.git
+[submodule "extern/CLI11"]
+	path = extern/CLI11
+	url = https://github.com/CLIUtils/CLI11.git
+[submodule "extern/streampu"]
+	path = extern/streampu
+	url = https://github.com/aff3ct/streampu.git
