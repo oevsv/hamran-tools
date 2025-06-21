@@ -21,7 +21,7 @@ using std::exception;
 
 int main(int argc, char** argv)
 {
-    CLI::App app{"lm2-gpio: control GPIO lines of lime miniv2"};
+    CLI::App app{"Control GPIO lines of lime miniv2", "lm2-gpio"};
     argv = app.ensure_utf8(argv);
 
     bool verbose = false;
