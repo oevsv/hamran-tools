@@ -53,19 +53,22 @@ set(INSTALL_UDEV_RULES OFF CACHE BOOL "preset for hamran-tools")
 set(UDEV_RULES_RELOAD_ON_INSTALL OFF CACHE BOOL "preset for hamran-tools")
 set(LIMEPCIE_INSTALL OFF CACHE BOOL "preset for hamran-tools")
 set(LIMEPCIE_RELOAD_ON_INSTALL OFF CACHE BOOL "preset for hamran-tools")
-add_subdirectory(extern/LimeSuiteNG)
+add_subdirectory(extern/LimeSuiteNG EXCLUDE_FROM_ALL)
 
-#find_package(Threads)
-#find_package(cpptrace REQUIRED)
-#find_package(streampu REQUIRED)
 set(SPU_TESTS OFF CACHE BOOL "preset for hamran-tools")
 set(SPU_COMPILE_STATIC_LIB ON BOOL "preset for hamran-tools")
-add_subdirectory(extern/streampu)
+add_subdirectory(extern/streampu EXCLUDE_FROM_ALL)
 add_library(spu::spu-static-lib ALIAS spu-static-lib)
 add_library(spu::rang ALIAS rang) # use the rang lib from streampu
 
-#find_package(CLI11 2.5.0 REQUIRED)
-add_subdirectory(extern/CLI11)
+add_subdirectory(extern/CLI11 EXCLUDE_FROM_ALL)
+
+add_subdirectory(extern/PlatformFolders EXCLUDE_FROM_ALL)
+
+set(SPDLOG_USE_STD_FORMAT ON CACHE BOOL "preset for hamran-tools")
+add_subdirectory(extern/spdlog EXCLUDE_FROM_ALL)
+
+add_subdirectory(extern/cpp-terminal EXCLUDE_FROM_ALL)
 
 ## Set up the hamran-tools project
 

@@ -5,7 +5,10 @@ target_link_libraries(lm2-gpio
     limesuiteng::limesuiteng
     spu::spu-static-lib
     CLI11::CLI11
+    cpp-terminal
     spu::rang
+    platform_folders
+    spdlog
 )
 
 install(TARGETS lm2-gpio
