@@ -4,9 +4,6 @@
 [submodule "extern/CLI11"]
 	path = extern/CLI11
 	url = https://github.com/CLIUtils/CLI11.git
-[submodule "extern/streampu"]
-	path = extern/streampu
-	url = https://github.com/aff3ct/streampu.git
 [submodule "extern/PlatformFolders"]
 	path = extern/PlatformFolders
 	url = https://github.com/sago007/PlatformFolders.git
@@ -16,3 +13,6 @@
 [submodule "extern/cpp-terminal"]
 	path = extern/cpp-terminal
 	url = https://github.com/jupyter-xeus/cpp-terminal.git
+[submodule "extern/liquid-dsp"]
+	path = extern/liquid-dsp
+	url = https://github.com/oe1rsa/liquid-dsp.git

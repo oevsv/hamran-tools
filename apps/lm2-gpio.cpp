@@ -28,8 +28,10 @@ using spdlog::debug, spdlog::info;
 #include <limesuiteng/limesuiteng.hpp>
 using lime::DeviceRegistry, lime::DeviceHandle, lime::SDRDevice, lime::LimeSDR_Mini;
 
-#include <rang.hpp>
-using rang::style, rang::fgB, rang::fg;
+#include <complex> // NB: Must be included before liquid.h !
+#include <liquid.h>
+//#include <rang.hpp>
+//using rang::style, rang::fgB, rang::fg;
 
 #include <iostream>
 using std::cout, std::cerr, std::endl, std::ostream;
@@ -58,6 +60,7 @@ ostream& operator<<(ostream& os, byte b) {
 
 int main(int argc, char** argv)
 {
+
     CLI::App app{"lm2-gpio: control GPIO lines of lime miniv2"};
     argv = app.ensure_utf8(argv);
 

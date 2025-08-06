@@ -3,10 +3,9 @@ add_executable(lm2-gpio lm2-gpio.cpp)
 target_link_libraries(lm2-gpio
     gitflow
     limesuiteng::limesuiteng
-    spu::spu-static-lib
+    liquid::liquid
     CLI11::CLI11
     cpp-terminal
-    spu::rang
     platform_folders
     spdlog
 )
