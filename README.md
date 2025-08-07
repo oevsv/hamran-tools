@@ -41,7 +41,7 @@ to get a downstream clone.
 
 ## Contact
 
-    matrix: #hamran:matrix.org
+    matrix: #hamran:oevsv.matrix.org
     email:  oe1rsa@oevsv.at
 
 Of course you can also post a radicle issue.
