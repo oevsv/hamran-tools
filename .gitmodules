@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: 2023 Roland Schwarz <roland.schwarz@blackspace.at>
+#
+# SPDX-License-Identifier: CC0-1.0
+#
+
 [submodule "extern/LimeSuiteNG"]
 	path = extern/LimeSuiteNG
 	url = https://github.com/myriadrf/LimeSuiteNG.git
