@@ -28,9 +28,6 @@ using spdlog::debug, spdlog::info;
 #include <limesuiteng/limesuiteng.hpp>
 using lime::DeviceRegistry, lime::DeviceHandle, lime::SDRDevice, lime::LimeSDR_Mini;
 
-#include <complex> // NB: Must be included before liquid.h !
-using std::complex;
-#include <liquid.h>
 
 #include <iostream>
 using std::cout, std::cerr, std::endl, std::ostream;

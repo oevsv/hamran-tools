@@ -30,6 +30,7 @@ add_subdirectory(apps)
 
 add_custom_target(doc SOURCES
     README.md
+    CHANGELOG.md
 )
 
 include(CPack)
