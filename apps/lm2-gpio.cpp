@@ -29,9 +29,8 @@ using spdlog::debug, spdlog::info;
 using lime::DeviceRegistry, lime::DeviceHandle, lime::SDRDevice, lime::LimeSDR_Mini;
 
 #include <complex> // NB: Must be included before liquid.h !
+using std::complex;
 #include <liquid.h>
-//#include <rang.hpp>
-//using rang::style, rang::fgB, rang::fg;
 
 #include <iostream>
 using std::cout, std::cerr, std::endl, std::ostream;
