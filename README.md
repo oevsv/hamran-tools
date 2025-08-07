@@ -1,6 +1,7 @@
+[//]: # (
 SPDX-FileCopyrightText: 2025 Roland Schwarz <roland.schwarz@blackspace.at>
-
 SPDX-License-Identifier: CC-BY-3.0
+)
 
 ![HAMRAN Logo](hamran.png)
 
@@ -25,17 +26,19 @@ Some information also might be found on this [blog][3].
 
 ---
 
-## The Project now is Hosted on Radicle
+## The Project Now is Also Hosted on Radicle
 
 Depending on how you obtained this copy of the tools you possibly already know
-what Radicle is. If not: It is a peer to peer (P2P) forge for github projects.
+what Radicle is. If not: It is a peer to peer (P2P) forge for git projects.
 While full colaboration with the project is easiest by installing a copy of
 [Radicle][2] on your machine, this is not required if you just want to get hold 
 of a copy of the git repository, in which case you simply may
 
-    git clone https://seed.radicle.garden/z4CzhULrd3JUfUoGcBk8u8sXqJGnt.git hamran-tools
+    git clone https://iris.radicle.xyz/z4CzhULrd3JUfUoGcBk8u8sXqJGnt.git hamran-tools
 
-to get a downstream clone.
+to get a downstream clone. 
+
+You can browse the project online on a seed node under its radicle id [rad:z4CzhULrd3JUfUoGcBk8u8sXqJGnt](https://app.radicle.xyz/nodes/seed.radicle.garden/rad:z4CzhULrd3JUfUoGcBk8u8sXqJGnt).
 
 ---
 
@@ -48,7 +51,7 @@ Of course you can also post a radicle issue.
 
 [^1]: HAM is also the name of a radio amateur.
 
-[1]: https://github.com/oevsv/hamran-tools
+[1]: https://github.com/oevsv/hamran-tools-legacy
 [2]: https://radicle.xyz
 [3]: https://hamran.oevsv.at
 
