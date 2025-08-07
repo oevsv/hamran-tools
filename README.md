@@ -1,4 +1,4 @@
-SPDX-FileCopyrightText: '2025 Roland Schwarz <roland.schwarz@blackspace.at>
+SPDX-FileCopyrightText: 2025 Roland Schwarz <roland.schwarz@blackspace.at>
 
 SPDX-License-Identifier: CC-BY-3.0
 
@@ -30,8 +30,8 @@ Some information also might be found on this [blog][3].
 Depending on how you obtained this copy of the tools you possibly already know
 what Radicle is. If not: It is a peer to peer (P2P) forge for github projects.
 While full colaboration with the project is easiest by installing a copy of
-[Radicle][2] on your machine, this is not required if you just want to get hold of
-a copy of the git repository, in which case you simply may
+[Radicle][2] on your machine, this is not required if you just want to get hold 
+of a copy of the git repository, in which case you simply may
 
     git clone https://seed.radicle.garden/z4CzhULrd3JUfUoGcBk8u8sXqJGnt.git hamran-tools
 
@@ -41,7 +41,7 @@ to get a downstream clone.
 
 ## Contact
 
-    matrix: #hamran:matrix.org
+    matrix: #hamran:oevsv.matrix.org
     email:  oe1rsa@oevsv.at
 
 Of course you can also post a radicle issue.

@@ -42,7 +42,7 @@ else()
     message(WARNING "git is not available.")
 endif()
 
-configure_file ("git_flow_cpack.cmake.in" "git_flow_cpack.cmake" @ONLY)
+configure_file ("${CMAKE_CURRENT_LIST_DIR}/git_flow_cpack.cmake.in" "git_flow_cpack.cmake" @ONLY)
 set (CPACK_PROJECT_CONFIG_FILE "git_flow_cpack.cmake")
 # write a default to the build directory, so that in case git is not
 # available, the build still will run
