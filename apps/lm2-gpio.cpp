@@ -21,13 +21,16 @@ using Term::Key, Term::read_event;
 using sago::getConfigHome;
 
 #include <spdlog/spdlog.h>
-using spdlog::debug, spdlog::info;
+using spdlog::trace, spdlog::debug, spdlog::info, spdlog::warn, spdlog::error,
+    spdlog::critical;
 
 #include "FPGA/FPGA_common.h"
-#include "boards/LimeSDR_Mini/LimeSDR_Mini.h"
-#include <limesuiteng/limesuiteng.hpp>
-using lime::DeviceRegistry, lime::DeviceHandle, lime::SDRDevice, lime::LimeSDR_Mini;
 
+#include <limesuiteng/limesuiteng.hpp>
+using lime::DeviceRegistry, lime::DeviceHandle, lime::SDRDevice;
+
+#include "boards/LimeSDR_Mini/LimeSDR_Mini.h"
+using lime::LimeSDR_Mini;
 
 #include <iostream>
 using std::cout, std::cerr, std::endl, std::ostream;
@@ -54,6 +57,21 @@ ostream& operator<<(ostream& os, byte b) {
     return os << bitset<8>(to_integer<int>(b));
 }
 
+namespace {
+
+void limeSuiteLogHandler(const lime::LogLevel level, const char* message) {
+    switch(level) {
+    case lime::LogLevel::Critical: critical("lime: {}", message); break;
+    case lime::LogLevel::Error:    error(   "lime {}",  message); break;
+    case lime::LogLevel::Warning:  warn(    "lime: {}", message); break;
+    case lime::LogLevel::Info:     info(    "lime: {}", message); break;
+    case lime::LogLevel::Debug:    debug(   "lime: {}", message); break;
+    default: info("lime: {}", message); break;
+    }
+}
+
+}
+
 int main(int argc, char** argv)
 {
 
@@ -78,9 +96,9 @@ int main(int argc, char** argv)
         app.parse(argc, argv);
         spdlog::set_level(spdlog::level::from_str(loglevel));
         spdlog::flush_on(spdlog::get_level());
+        lime::registerLogHandler(limeSuiteLogHandler);
 
-        info("{} started", app.get_name());
-        info("loglevel: {}", loglevel);
+        info("{} started, loglevel is {}", app.get_name(), loglevel);
 
         if (list) {
             for (auto& dh : DeviceRegistry::enumerate())

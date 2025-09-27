@@ -27,8 +27,31 @@ target_link_libraries(lm2-iqtx
     spdlog
 )
 
+add_executable(lm2-iqrx lm2-iqrx.cpp)
 
-install(TARGETS lm2-gpio lm2-iqtx
+target_link_libraries(lm2-iqrx
+    gitflow
+    limesuiteng::limesuiteng
+    liquid::liquid
+    CLI11::CLI11
+    cpp-terminal
+    platform_folders
+    spdlog
+)
+
+
+add_executable(hrbeacon hrbeacon.cpp)
+
+target_link_libraries(hrbeacon
+    gitflow
+    limesuiteng::limesuiteng
+    liquid::liquid
+    CLI11::CLI11
+    platform_folders
+    spdlog
+)
+
+install(TARGETS lm2-gpio lm2-iqrx lm2-iqtx hrbeacon
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
