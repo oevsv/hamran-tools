@@ -16,7 +16,8 @@ using spdlog::trace, spdlog::debug, spdlog::info, spdlog::warn, spdlog::error,
     spdlog::critical;
 
 #include <limesuiteng/limesuiteng.hpp>
-using lime::DeviceRegistry, lime::DeviceHandle, lime::SDRDevice, lime::RFStream;
+using lime::DeviceRegistry, lime::DeviceHandle, lime::SDRDevice, lime::RFStream,
+    lime::OpStatus;
 
 #include "boards/LimeSDR_Mini/LimeSDR_Mini.h"
 using lime::LimeSDR_Mini;
@@ -80,8 +81,9 @@ int main(int argc, char** argv) {
     CLI::App app{"lm2-iqrx: receive an IQ file with lime miniv2"};
     argv = app.ensure_utf8(argv);
 
+    OpStatus os;
     DeviceHandle hint;
-    string loglevel = "info";
+    string loglevel = "trace";
     path dst;
 
     double sample_rate =  4e6; // Hz
@@ -145,6 +147,13 @@ int main(int argc, char** argv) {
                 ch.rx.lpf = 0;
                 ch.rx.path = 3;
                 ch.rx.calibrate = lime::CalibrationFlag::NONE;
+                ch.rx.testSignal.enabled = false;
+                ch.rx.gain[lime::eGainTypes::LNA] = 30.0;
+                // ch.rx.gain[lime::eGainTypes::TIA] = 1.0;
+                // ch.rx.gain[lime::eGainTypes::PGA] = 1.0;
+                // ch.rx.gain[lime::eGainTypes::PAD] = 1.0;
+                // ch.rx.gain[lime::eGainTypes::IAMP] = 1.0;
+                // ch.rx.gain[lime::eGainTypes::PA] = 1.0;
 
                 ch.tx.enabled = true;
                 ch.tx.centerFrequency = freq;
@@ -152,6 +161,7 @@ int main(int argc, char** argv) {
                 ch.tx.oversample = 2;
                 ch.tx.path = 2;
                 ch.tx.calibrate = lime::CalibrationFlag::NONE;
+                ch.tx.testSignal.enabled = false;
             }
             lime::StreamConfig strcfg;
 
@@ -160,26 +170,37 @@ int main(int argc, char** argv) {
             strcfg.format = lime::DataFormat::F32;
             strcfg.linkFormat = lime::DataFormat::I16;
 
-            vector<complex<float>> rx_buffer(1020);
+            vector<complex<float>> rx_buffer(4096);
             lime::StreamMeta rx_meta{};
 
-            dev->Configure(cfg, 0);
+            os = dev->Configure(cfg, 0);
+            if (lime::OpStatus::Success != os) {
+                cout << unsigned(os) << endl;
+            }
+            //os = dev->SetGain(0, lime::TRXDir::Rx, 3, lime::eGainTypes::LNA, 30);
+
             unique_ptr<RFStream> stream = dev->StreamCreate(strcfg, 0);
             stream->Start();
 
             uint64_t timestamp_expected = 0;
             uint64_t timestamp_anchor = 0;
+            lime::StreamStats rx_stat;
             while (0 == signal_status) {
                 lime::complex32f_t* rx_wrap[1] {reinterpret_cast<lime::complex32f_t*>(rx_buffer.data())};
                 uint32_t rc = stream->StreamRx(rx_wrap, rx_buffer.size(), &rx_meta);
                 if (rx_buffer.size() > rc) cout << "rx underrun" << endl;
-                if (timestamp_expected > rx_meta.timestamp) {
-                    cout << format("TS: {}, expected: +{}\n", rx_meta.timestamp, timestamp_expected - rx_meta.timestamp);
-                } else if (timestamp_expected < rx_meta.timestamp) {
-                    cout << format("TS: {}, expected: -{}, length: {}\n", rx_meta.timestamp, rx_meta.timestamp - timestamp_expected, timestamp_expected - timestamp_anchor);
-                    timestamp_anchor = rx_meta.timestamp;
-                }
+                // if (timestamp_expected > rx_meta.timestamp) {
+                //     cout << format("TS: {}, expected: +{}\n", rx_meta.timestamp, timestamp_expected - rx_meta.timestamp);
+                // } else if (timestamp_expected < rx_meta.timestamp) {
+                //     cout << format("TS: {}, expected: -{}, length: {}\n", rx_meta.timestamp, rx_meta.timestamp - timestamp_expected, timestamp_expected - timestamp_anchor);
+                //     timestamp_anchor = rx_meta.timestamp;
+
+                // }
                 timestamp_expected = rx_meta.timestamp + rx_buffer.size();
+                stream->StreamStatus(&rx_stat, nullptr);
+                if (rx_stat.FIFO.usedCount > 0)
+                    cout << rx_stat.FIFO.usedCount << ", " << rx_stat.FIFO.totalCount << endl;
+
             }
 
             stream->Stop();
