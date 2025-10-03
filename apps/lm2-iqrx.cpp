@@ -5,6 +5,7 @@
 //
 
 #include "gitflow.hpp"
+#include "limesuiteng/StreamMeta.h"
 
 #include <CLI/CLI.hpp>
 
@@ -39,6 +40,9 @@ using std::format;
 
 #include <iostream>
 using std::cout, std::cerr, std::endl, std::ostream;
+
+#include <fstream>
+using std::ofstream, std::ios;
 
 #include <filesystem>
 using std::filesystem::path;
@@ -83,7 +87,7 @@ int main(int argc, char** argv) {
 
     OpStatus os;
     DeviceHandle hint;
-    string loglevel = "trace";
+    string loglevel = "info";
     path dst;
 
     double sample_rate =  4e6; // Hz
@@ -130,6 +134,7 @@ int main(int argc, char** argv) {
         if (nullptr == dev)
             warn("could not open a device");
         else {
+            dst.replace_extension(".c32_le");
             info("Filename for saving: {}", dst.string());
             info("Carrier frequency {:.2f} MHz", freq/1e6);
             info("Sample rate {:.3f} MHz", sample_rate/1e6);
@@ -140,7 +145,7 @@ int main(int argc, char** argv) {
             {
                 lime::ChannelConfig& ch{cfg.channel[0]};
 
-                ch.rx.enabled = false;
+                ch.rx.enabled = true;
                 ch.rx.centerFrequency = freq;
                 ch.rx.sampleRate = sample_rate;
                 ch.rx.oversample = 2;
@@ -158,7 +163,7 @@ int main(int argc, char** argv) {
                 ch.tx.enabled = true;
                 ch.tx.centerFrequency = freq;
                 ch.tx.sampleRate = sample_rate;
-                ch.tx.oversample = 2;
+                ch.tx.oversample = 3;
                 ch.tx.path = 2;
                 ch.tx.calibrate = lime::CalibrationFlag::NONE;
                 ch.tx.testSignal.enabled = false;
@@ -170,8 +175,10 @@ int main(int argc, char** argv) {
             strcfg.format = lime::DataFormat::F32;
             strcfg.linkFormat = lime::DataFormat::I16;
 
+            //strcfg.extraConfig.waitPPS = true;
+
             vector<complex<float>> rx_buffer(4096);
-            lime::StreamMeta rx_meta{};
+            lime::StreamRxMeta rx_meta;
 
             os = dev->Configure(cfg, 0);
             if (lime::OpStatus::Success != os) {
@@ -184,24 +191,29 @@ int main(int argc, char** argv) {
 
             uint64_t timestamp_expected = 0;
             uint64_t timestamp_anchor = 0;
-            lime::StreamStats rx_stat;
+            //lime::StreamStats rx_stat;
+            complex<float> last_sample;
+            ofstream out(dst, ios::out|ios::binary);
             while (0 == signal_status) {
                 lime::complex32f_t* rx_wrap[1] {reinterpret_cast<lime::complex32f_t*>(rx_buffer.data())};
-                uint32_t rc = stream->StreamRx(rx_wrap, rx_buffer.size(), &rx_meta);
+                uint32_t rc = stream->Receive(rx_wrap, rx_buffer.size(), &rx_meta);
+                //out.write(reinterpret_cast<char*>(rx_buffer.data()), sizeof(complex<float>)*rx_buffer.size());
                 if (rx_buffer.size() > rc) cout << "rx underrun" << endl;
-                // if (timestamp_expected > rx_meta.timestamp) {
-                //     cout << format("TS: {}, expected: +{}\n", rx_meta.timestamp, timestamp_expected - rx_meta.timestamp);
-                // } else if (timestamp_expected < rx_meta.timestamp) {
-                //     cout << format("TS: {}, expected: -{}, length: {}\n", rx_meta.timestamp, rx_meta.timestamp - timestamp_expected, timestamp_expected - timestamp_anchor);
-                //     timestamp_anchor = rx_meta.timestamp;
-
-                // }
-                timestamp_expected = rx_meta.timestamp + rx_buffer.size();
-                stream->StreamStatus(&rx_stat, nullptr);
-                if (rx_stat.FIFO.usedCount > 0)
-                    cout << rx_stat.FIFO.usedCount << ", " << rx_stat.FIFO.totalCount << endl;
-
+                uint64_t rx_timestamp = rx_meta.timestamp.GetTicks();
+                // if (timestamp_expected > rx_timestamp) {
+                //     cout << format("TS: {}, expected: +{}\n", rx_timestamp, timestamp_expected - rx_timestamp);
+                //     if (rx_buffer.front() == last_sample) {
+                //         cout << "samples match" << endl;
+                //     }
+                // } else if (timestamp_expected < rx_timestamp) {
+                //     cout << format("TS: {}, expected: -{}, length: {}\n", rx_timestamp, rx_timestamp - timestamp_expected, timestamp_expected - timestamp_anchor);
+                //     timestamp_anchor = rx_timestamp;
+                //  }
+                timestamp_expected = rx_timestamp + rx_buffer.size();
+                 last_sample = rx_buffer.back();
             }
+            out.close();
+            info("stopping");
 
             stream->Stop();
             stream->Teardown();
