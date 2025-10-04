@@ -175,9 +175,9 @@ int main(int argc, char** argv) {
             strcfg.format = lime::DataFormat::F32;
             strcfg.linkFormat = lime::DataFormat::I16;
 
-            //strcfg.extraConfig.waitPPS = true;
+            strcfg.extraConfig.rx.packetsInBatch = 8;
 
-            vector<complex<float>> rx_buffer(4096);
+            vector<complex<float>> rx_buffer(2048);
             lime::StreamRxMeta rx_meta;
 
             os = dev->Configure(cfg, 0);
@@ -194,21 +194,22 @@ int main(int argc, char** argv) {
             //lime::StreamStats rx_stat;
             complex<float> last_sample;
             ofstream out(dst, ios::out|ios::binary);
+            info("Start streaming");
             while (0 == signal_status) {
                 lime::complex32f_t* rx_wrap[1] {reinterpret_cast<lime::complex32f_t*>(rx_buffer.data())};
                 uint32_t rc = stream->Receive(rx_wrap, rx_buffer.size(), &rx_meta);
                 //out.write(reinterpret_cast<char*>(rx_buffer.data()), sizeof(complex<float>)*rx_buffer.size());
                 if (rx_buffer.size() > rc) cout << "rx underrun" << endl;
                 uint64_t rx_timestamp = rx_meta.timestamp.GetTicks();
-                // if (timestamp_expected > rx_timestamp) {
-                //     cout << format("TS: {}, expected: +{}\n", rx_timestamp, timestamp_expected - rx_timestamp);
-                //     if (rx_buffer.front() == last_sample) {
-                //         cout << "samples match" << endl;
-                //     }
-                // } else if (timestamp_expected < rx_timestamp) {
-                //     cout << format("TS: {}, expected: -{}, length: {}\n", rx_timestamp, rx_timestamp - timestamp_expected, timestamp_expected - timestamp_anchor);
-                //     timestamp_anchor = rx_timestamp;
-                //  }
+                if (timestamp_expected > rx_timestamp) {
+                    cout << format("TS: {}, expected: +{}\n", rx_timestamp, timestamp_expected - rx_timestamp);
+                    if (rx_buffer.front() == last_sample) {
+                        cout << "samples match" << endl;
+                    }
+                } else if (timestamp_expected < rx_timestamp) {
+                    cout << format("TS: {}, expected: -{}, length: {}\n", rx_timestamp, rx_timestamp - timestamp_expected, timestamp_expected - timestamp_anchor);
+                    timestamp_anchor = rx_timestamp;
+                 }
                 timestamp_expected = rx_timestamp + rx_buffer.size();
                  last_sample = rx_buffer.back();
             }
