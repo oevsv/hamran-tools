@@ -23,6 +23,9 @@ using spdlog::trace, spdlog::debug, spdlog::info, spdlog::warn, spdlog::error,
 #include <limesuiteng/limesuiteng.hpp>
 using lime::DeviceRegistry, lime::DeviceHandle, lime::SDRDevice, lime::RFStream;
 
+#include "limesuiteng/StreamMeta.h"
+using lime::StreamRxMeta, lime::StreamTxMeta;
+
 #include "boards/LimeSDR_Mini/LimeSDR_Mini.h"
 using lime::LimeSDR_Mini;
 
@@ -101,7 +104,7 @@ int main(int argc, char** argv) {
     string loglevel   = "info";
     LimeSDR_Mini* dev = nullptr;
 
-    const double sample_rate = 2.4e6; // Hz
+    const double sample_rate = 4e6; // Hz
 
     // The following parameters can be configured at runtime
     double freq    = 53e6; // Hz
@@ -157,13 +160,14 @@ int main(int argc, char** argv) {
             {
                 lime::ChannelConfig& ch{cfg.channel[0]};
 
-                ch.rx.enabled = false;
+                ch.rx.enabled = true;
                 ch.rx.centerFrequency = freq;
                 ch.rx.sampleRate = sample_rate;
                 ch.rx.oversample = 2;
                 ch.rx.lpf = 0;
                 ch.rx.path = 3;
                 ch.rx.calibrate = lime::CalibrationFlag::NONE;
+                ch.rx.gain[lime::eGainTypes::LNA] = 0.0;
 
                 ch.tx.enabled = true;
                 ch.tx.centerFrequency = freq;
@@ -179,27 +183,36 @@ int main(int argc, char** argv) {
             strcfg.format = lime::DataFormat::F32;
             strcfg.linkFormat = lime::DataFormat::I16;
 
-            vector<complex<float>> tx_buffer(8192*4);
-            vector<complex<float>> rx_buffer(8192*4);
+            strcfg.extraConfig.rx.packetsInBatch = 8;
+            strcfg.extraConfig.tx.packetsInBatch = 16;
 
-            lime::StreamMeta rx_meta{};
-            lime::StreamMeta tx_meta{};
+            vector<complex<float>> tx_buffer(4096);
+            vector<complex<float>> rx_buffer(4096);
+
+            StreamRxMeta rx_meta;
+            StreamTxMeta tx_meta;
 
             dev->Configure(cfg, 0);
             unique_ptr<RFStream> stream = dev->StreamCreate(strcfg, 0);
             stream->Start();
 
+            complex<double> w = exp(2.0i*acos(-1)*double(tone/sample_rate));
+            // Initialize the oscillator:
+            complex<double> y = conj(w);
+
             debug("Streaming started");
             while (0 == signal_status) {
                 lime::complex32f_t* rx_wrap[1] {reinterpret_cast<lime::complex32f_t*>(rx_buffer.data())};
-                uint32_t rc = stream->StreamRx(rx_wrap, rx_buffer.size(), &rx_meta);
+                uint32_t rc = stream->Receive(rx_wrap, rx_buffer.size(), &rx_meta);
                 if (rx_buffer.size() > rc) cout << "rx underrun" << endl;
 
-                tx_meta.timestamp = rx_meta.timestamp + rx_buffer.size()*2;
-                tx_meta.waitForTimestamp = true;
-                tx_meta.flushPartialPacket = false;
-                lime::complex32f_t* tx_wrap[1] {reinterpret_cast<lime::complex32f_t*>(tx_buffer.data())};
-                uint32_t tc = stream->StreamTx(tx_wrap, tx_buffer.size(), &tx_meta);
+                tx_meta.timestamp = rx_meta.timestamp + 2*rx_buffer.size()/sample_rate;
+                tx_meta.hasTimestamp = false;
+                tx_meta.flags = 0;//StreamTxMeta::EndOfBurst;
+                for (size_t n=0; n<tx_buffer.size(); ++n)
+                    tx_buffer[n] = 0.5*(y*=w);
+                lime::complex32f_t* tx_wrap[1] {reinterpret_cast<lime::complex32f_t*>(rx_buffer.data())};
+                uint32_t tc = stream->Transmit(tx_wrap, rx_buffer.size(), &tx_meta);
                 if (tx_buffer.size() > tc) cout << "tx overrun" << endl;
 
                 //sleep_for(100ms);

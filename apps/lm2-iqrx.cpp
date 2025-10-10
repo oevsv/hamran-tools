@@ -5,7 +5,7 @@
 //
 
 #include "gitflow.hpp"
-#include "limesuiteng/StreamMeta.h"
+
 
 #include <CLI/CLI.hpp>
 
@@ -19,6 +19,9 @@ using spdlog::trace, spdlog::debug, spdlog::info, spdlog::warn, spdlog::error,
 #include <limesuiteng/limesuiteng.hpp>
 using lime::DeviceRegistry, lime::DeviceHandle, lime::SDRDevice, lime::RFStream,
     lime::OpStatus;
+
+#include "limesuiteng/StreamMeta.h"
+using lime::StreamRxMeta;
 
 #include "boards/LimeSDR_Mini/LimeSDR_Mini.h"
 using lime::LimeSDR_Mini;
@@ -46,6 +49,9 @@ using std::ofstream, std::ios;
 
 #include <filesystem>
 using std::filesystem::path;
+
+#include <chrono>
+using std::chrono::system_clock;
 
 #include <exception>
 using std::exception, std::invalid_argument;
@@ -78,7 +84,7 @@ void signal_handler(int signal) {
 }
 
 int main(int argc, char** argv) {
-
+    cout << format("{:%Y-%m-%dT%H%M%S}", system_clock::now()) << endl;
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
@@ -134,7 +140,7 @@ int main(int argc, char** argv) {
         if (nullptr == dev)
             warn("could not open a device");
         else {
-            dst.replace_extension(".c32_le");
+            dst += format("_{:%Y-%m-%dT%H%M%S}.c32_le", system_clock::now());
             info("Filename for saving: {}", dst.string());
             info("Carrier frequency {:.2f} MHz", freq/1e6);
             info("Sample rate {:.3f} MHz", sample_rate/1e6);
@@ -160,7 +166,7 @@ int main(int argc, char** argv) {
                 // ch.rx.gain[lime::eGainTypes::IAMP] = 1.0;
                 // ch.rx.gain[lime::eGainTypes::PA] = 1.0;
 
-                ch.tx.enabled = true;
+                ch.tx.enabled = false;
                 ch.tx.centerFrequency = freq;
                 ch.tx.sampleRate = sample_rate;
                 ch.tx.oversample = 3;
@@ -175,23 +181,22 @@ int main(int argc, char** argv) {
             strcfg.format = lime::DataFormat::F32;
             strcfg.linkFormat = lime::DataFormat::I16;
 
-            strcfg.extraConfig.rx.packetsInBatch = 8;
+            strcfg.extraConfig.rx.packetsInBatch = 16;
 
             vector<complex<float>> rx_buffer(2048);
-            lime::StreamRxMeta rx_meta;
+            StreamRxMeta rx_meta;
 
             os = dev->Configure(cfg, 0);
             if (lime::OpStatus::Success != os) {
                 cout << unsigned(os) << endl;
             }
-            //os = dev->SetGain(0, lime::TRXDir::Rx, 3, lime::eGainTypes::LNA, 30);
 
             unique_ptr<RFStream> stream = dev->StreamCreate(strcfg, 0);
             stream->Start();
 
             uint64_t timestamp_expected = 0;
             uint64_t timestamp_anchor = 0;
-            //lime::StreamStats rx_stat;
+
             complex<float> last_sample;
             ofstream out(dst, ios::out|ios::binary);
             info("Start streaming");
@@ -203,9 +208,6 @@ int main(int argc, char** argv) {
                 uint64_t rx_timestamp = rx_meta.timestamp.GetTicks();
                 if (timestamp_expected > rx_timestamp) {
                     cout << format("TS: {}, expected: +{}\n", rx_timestamp, timestamp_expected - rx_timestamp);
-                    if (rx_buffer.front() == last_sample) {
-                        cout << "samples match" << endl;
-                    }
                 } else if (timestamp_expected < rx_timestamp) {
                     cout << format("TS: {}, expected: -{}, length: {}\n", rx_timestamp, rx_timestamp - timestamp_expected, timestamp_expected - timestamp_anchor);
                     timestamp_anchor = rx_timestamp;
@@ -214,7 +216,7 @@ int main(int argc, char** argv) {
                  last_sample = rx_buffer.back();
             }
             out.close();
-            info("stopping");
+            info("Streaming stopped");
 
             stream->Stop();
             stream->Teardown();
