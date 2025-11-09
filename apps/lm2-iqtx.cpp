@@ -8,15 +8,6 @@
 
 #include <CLI/CLI.hpp>
 
-#include <cpp-terminal/terminal.hpp>
-using Term::terminal;
-
-#include <cpp-terminal/tty.hpp>
-using Term::is_stdin_a_tty;
-
-#include <cpp-terminal/input.hpp>
-using Term::Key, Term::read_event;
-
 #include <platform_folders.h>
 using sago::getConfigHome;
 
@@ -24,13 +15,14 @@ using sago::getConfigHome;
 using spdlog::trace, spdlog::debug, spdlog::info, spdlog::warn, spdlog::error,
     spdlog::critical;
 
-#include "FPGA/FPGA_common.h"
-
 #include <limesuiteng/limesuiteng.hpp>
 using lime::DeviceRegistry, lime::DeviceHandle, lime::SDRDevice;
 
 #include "boards/LimeSDR_Mini/LimeSDR_Mini.h"
 using lime::LimeSDR_Mini;
+
+#include <string>
+using std::string, std::stoi;
 
 #include <iostream>
 using std::cout, std::cerr, std::endl, std::ostream;
@@ -41,58 +33,45 @@ using std::exception, std::invalid_argument;
 #include <stdexcept>
 using std::runtime_error;
 
-#include <cstddef>
-using std::byte, std::to_integer;;
-
-#include <bitset>
-using std::bitset;
-
-#include <vector>
-using std::vector;
-
-#include <string>
-using std::string, std::stoi;
-
-ostream& operator<<(ostream& os, byte b) {
-    return os << bitset<8>(to_integer<int>(b));
-}
+// #include <complex> // NB: Must be included before liquid.h !
+// using std::complex;
+// #include <liquid.h>
 
 namespace {
 
-void limeSuiteLogHandler(const lime::LogLevel level, const char* message) {
+void limeSuiteLogHandler(const lime::LogLevel level, const string& message) {
     switch(level) {
     case lime::LogLevel::Critical: critical("lime: {}", message); break;
     case lime::LogLevel::Error:    error(   "lime {}",  message); break;
     case lime::LogLevel::Warning:  warn(    "lime: {}", message); break;
     case lime::LogLevel::Info:     info(    "lime: {}", message); break;
     case lime::LogLevel::Debug:    debug(   "lime: {}", message); break;
-    default: info("lime: {}", message); break;
+    case lime::LogLevel::Verbose:  trace(   "lime: {}", message); break;
     }
 }
 
 }
 
-int main(int argc, char** argv)
-{
+int main(int argc, char** argv) {
 
-    CLI::App app{"lm2-gpio: control GPIO lines of lime miniv2"};
+    CLI::App app{"lm2-iqrx: transmit an IQ file with lime miniv2"};
     argv = app.ensure_utf8(argv);
 
-    bool list = false;
     DeviceHandle hint;
     string loglevel = "trace";
 
     app.footer("When no options are present the interactive mode is started.");
-    app.set_config("--config", getConfigHome() + "/hamran-tools/lm2-gpio.ini");
+    app.set_config("--config", getConfigHome() + "/hamran-tools/lm2-iqtx.ini");
     app.set_version_flag("--version", gitflow::tag);
-    app.add_flag("-l,--list", list, "List Devices and exit");
-    app.add_option("--name", hint.name, "Load device name");
     app.add_option("--serial", hint.serial, "Load device serial");
     app.add_option("--level", loglevel, "Specify the logging level")
         ->capture_default_str()
         ->check(CLI::IsMember(SPDLOG_LEVEL_NAMES));
 
-    try {
+    LimeSDR_Mini* dev = nullptr;
+    int main_exit = EXIT_SUCCESS;
+
+    try{
         app.parse(argc, argv);
         spdlog::set_level(spdlog::level::from_str(loglevel));
         spdlog::flush_on(spdlog::get_level());
@@ -100,13 +79,6 @@ int main(int argc, char** argv)
 
         info("{} started, loglevel is {}", app.get_name(), loglevel);
 
-        if (list) {
-            for (auto& dh : DeviceRegistry::enumerate())
-                cout << dh.Serialize() << endl;
-            return EXIT_SUCCESS;
-        }
-
-        LimeSDR_Mini* dev = nullptr;
         debug("device hint is: [{}]", hint.Serialize());
         for (auto& dh : DeviceRegistry::enumerate(hint)) {
             debug("trying to open {}, {}", dh.name, dh.serial);
@@ -121,55 +93,54 @@ int main(int argc, char** argv)
             }
         }
         if (nullptr == dev)
-            debug("could not open a device");
+            warn("could not open a device");
         else {
-            terminal.setOptions(Term::Option::Raw);
-            if (!is_stdin_a_tty())
-                throw runtime_error("no interactive mode, not atty");
+            dev->SetMessageLogCallback(limeSuiteLogHandler);
+            dev->Init();
+            lime::SDRConfig cfg;
+            {
+                lime::ChannelConfig& ch{cfg.channel[0]};
 
-            cout << "Press 0..7 to toggle pin, q to end." << endl;
+                ch.rx.enabled = false;
+                ch.rx.centerFrequency = 53e6;
+                ch.rx.sampleRate = 4e6;
+                ch.rx.oversample = 2;
+                ch.rx.lpf = 0;
+                ch.rx.path = 3;
+                ch.rx.calibrate = lime::CalibrationFlag::NONE;
 
-            uint16_t fpga = dev->GetFPGA()->ReadRegister(0x00c0);
-            // force all GPIO to user override
-            fpga |= 0xff;
-            dev->GetFPGA()->WriteRegister(0x00c0, fpga);
-
-            uint8_t gpio_dir{0xff};
-            dev->GPIODirWrite(&gpio_dir, 1);
-            gpio_dir = 0x00;
-            dev->GPIODirRead(&gpio_dir, 1);
-
-            uint8_t gpio{0};
-            dev->GPIORead(&gpio, 1);
-            cout << byte(gpio) << endl;
-            Key key(read_event());
-            while (Term::Key::q != key) {
-                try {
-                    int bit = stoi(key.name(), nullptr, 8);
-                    if (0 <= bit && bit <= 7) {
-                        gpio ^= uint8_t(1 << bit);
-                        dev->GPIOWrite(&gpio, 1);
-                    }
-                } catch (invalid_argument) {
-                    /* expected for non octal keys */
-                }
-                dev->GPIORead(&gpio, 1);
-                cout << byte(gpio) << endl;
-                key = Key(read_event());
+                ch.tx.enabled = true;
+                ch.tx.centerFrequency = 53e6;
+                ch.tx.sampleRate = 4e6;
+                ch.tx.oversample = 2;
+                ch.tx.path = 2;
+                ch.tx.calibrate = lime::CalibrationFlag::NONE;
             }
+            lime::StreamConfig strcfg;
 
-            debug("closing device");
-            DeviceRegistry::freeDevice(dev);
+            strcfg.channels[lime::TRXDir::Rx] = { 0 };
+            strcfg.channels[lime::TRXDir::Tx] = { 0 };
+            strcfg.format = lime::DataFormat::F32;
+            strcfg.linkFormat = lime::DataFormat::I16;
+
+            dev->Configure(cfg, 0);
+
         }
 
     } catch (const CLI::ParseError& e) {
-        return app.exit(e);
+        main_exit = app.exit(e);
     } catch (const exception& e) {
         cerr << e.what() << endl;
+        main_exit = EXIT_FAILURE;
     } catch (...) {
         cerr << "Exception of unknown type";
-        return EXIT_FAILURE;
+        main_exit = EXIT_FAILURE;
     }
 
-    return EXIT_SUCCESS;
+    if (nullptr != dev) {
+        debug("closing device");
+        DeviceRegistry::freeDevice(dev);
+    }
+
+    return main_exit;
 }

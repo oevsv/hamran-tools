@@ -5,7 +5,7 @@
 
 [submodule "extern/LimeSuiteNG"]
 	path = extern/LimeSuiteNG
-	url = https://github.com/myriadrf/LimeSuiteNG.git
+	url = https://github.com/oe1rsa/LimeSuiteNG.git
 [submodule "extern/CLI11"]
 	path = extern/CLI11
 	url = https://github.com/CLIUtils/CLI11.git

@@ -49,7 +49,7 @@ You can browse the project online on a seed node under its radicle id [rad:z4Czh
 
 Of course you can also post a radicle issue.
 
-[^1]: HAM is also the name of a radio amateur.
+[^1]: The  label *HAM* is also used to mean a *Radio Amateur*.
 
 [1]: https://github.com/oevsv/hamran-tools-legacy
 [2]: https://radicle.xyz
