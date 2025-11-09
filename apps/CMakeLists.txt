@@ -39,6 +39,25 @@ target_link_libraries(lm2-iqrx
     spdlog
 )
 
+add_executable(lm2-loop lm2-loop.cpp)
+
+target_link_libraries(lm2-loop
+    gitflow
+    limesuiteng::limesuiteng
+    CLI11::CLI11
+    platform_folders
+    spdlog
+)
+
+add_executable(lm2-singen lm2-singen.cpp)
+
+target_link_libraries(lm2-singen
+    gitflow
+    limesuiteng::limesuiteng
+    CLI11::CLI11
+    platform_folders
+    spdlog
+)
 
 add_executable(hrbeacon hrbeacon.cpp)
 
@@ -51,7 +70,7 @@ target_link_libraries(hrbeacon
     spdlog
 )
 
-install(TARGETS lm2-gpio lm2-iqrx lm2-iqtx hrbeacon
+install(TARGETS lm2-gpio lm2-iqrx lm2-iqtx lm2-singen hrbeacon
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )

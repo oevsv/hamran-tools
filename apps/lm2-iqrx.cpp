@@ -6,7 +6,6 @@
 
 #include "gitflow.hpp"
 
-
 #include <CLI/CLI.hpp>
 
 #include <platform_folders.h>
@@ -48,7 +47,8 @@ using std::cout, std::cerr, std::endl, std::ostream;
 using std::ofstream, std::ios;
 
 #include <filesystem>
-using std::filesystem::path;
+using std::filesystem::path, std::filesystem::create_symlink,
+    std::filesystem::remove;
 
 #include <chrono>
 using std::chrono::system_clock;
@@ -65,178 +65,218 @@ using namespace std::literals::complex_literals;
 
 namespace {
 
-void limeSuiteLogHandler(const lime::LogLevel level, const string& message) {
-    switch(level) {
-    case lime::LogLevel::Critical: critical("lime: {}", message); break;
-    case lime::LogLevel::Error:    error(   "lime {}",  message); break;
-    case lime::LogLevel::Warning:  warn(    "lime: {}", message); break;
-    case lime::LogLevel::Info:     info(    "lime: {}", message); break;
-    case lime::LogLevel::Debug:    debug(   "lime: {}", message); break;
-    case lime::LogLevel::Verbose:  trace(   "lime: {}", message); break;
-    }
+void limeSuiteLogHandler(const lime::LogLevel level, const string &message) {
+  switch (level) {
+  case lime::LogLevel::Critical:
+    critical("lime: {}", message);
+    break;
+  case lime::LogLevel::Error:
+    error("lime {}", message);
+    break;
+  case lime::LogLevel::Warning:
+    warn("lime: {}", message);
+    break;
+  case lime::LogLevel::Info:
+    info("lime: {}", message);
+    break;
+  case lime::LogLevel::Debug:
+    debug("lime: {}", message);
+    break;
+  case lime::LogLevel::Verbose:
+    trace("lime: {}", message);
+    break;
+  }
 }
 
 volatile sig_atomic_t signal_status = 0;
-void signal_handler(int signal) {
-    signal_status = signal;
+void signal_handler(int signal) { signal_status = signal; }
+
+ostream &write(ostream &os, const vector<complex<float>> &data) {
+  return os.write(reinterpret_cast<const char *>(data.data()),
+                  sizeof(complex<float>) * data.size());
 }
 
-}
+} // namespace
 
-int main(int argc, char** argv) {
-    cout << format("{:%Y-%m-%dT%H%M%S}", system_clock::now()) << endl;
-    signal(SIGINT, signal_handler);
-    signal(SIGTERM, signal_handler);
+int main(int argc, char **argv) {
 
-    CLI::App app{"lm2-iqrx: receive an IQ file with lime miniv2"};
-    argv = app.ensure_utf8(argv);
+  signal(SIGINT, signal_handler);
+  signal(SIGTERM, signal_handler);
 
-    OpStatus os;
-    DeviceHandle hint;
-    string loglevel = "info";
-    path dst;
+  CLI::App app{"lm2-iqrx: receive an IQ file with lime miniv2"};
+  argv = app.ensure_utf8(argv);
 
-    double sample_rate =  4e6; // Hz
-    double freq        = 53e6; // Hz
+  OpStatus ops;
+  DeviceHandle hint;
+  string loglevel = "info";
+  path dst = "lm2-iqrx";
+  path dstlnk;
 
-    //app.footer("When no options are present the interactive mode is started.");
-    app.set_config("--config", getConfigHome() + "/hamran-tools/lm2-iqtx.ini");
-    app.set_version_flag("--version", gitflow::tag);
-    app.add_option("--serial", hint.serial, "Load device serial");
-    app.add_option("--level", loglevel, "Specify the logging level")
-        ->capture_default_str()
-        ->check(CLI::IsMember(SPDLOG_LEVEL_NAMES));
-    app.add_option("filename", dst, "destination file")
-        ->required();
-    app.add_option("--freq,-f", freq, "Center frequency in Hz")
-        ->default_val(freq);
-    app.add_option("--sample_rate,-s", sample_rate, "Sample rate")
-        ->default_val(sample_rate);
+  double sample_rate = 4e6; // Hz
+  double freq = 53e6;       // Hz
+  double lna = 30.0;        // dB, Low Noise Amplifier gain
+  double tia = 9.0;         // dB, Trans Impedance Amplifier Gain
+  double pga = 0.0;         // dB, Programmable Gain Amplifier
 
-    LimeSDR_Mini* dev = nullptr;
-    int main_exit = EXIT_SUCCESS;
+  // app.footer("When no options are present the interactive mode is started.");
+  app.set_config("--config", getConfigHome() + "/hamran-tools/lm2-iqtx.ini");
+  app.set_version_flag("--version", gitflow::tag);
+  app.add_option("--serial", hint.serial, "Load device serial");
+  app.add_option("--level", loglevel, "Specify the logging level")
+      ->capture_default_str()
+      ->check(CLI::IsMember(SPDLOG_LEVEL_NAMES));
+  app.add_option("filename", dst, "destination file")->capture_default_str();
+  app.add_option("--freq,-f", freq, "Center frequency in Hz")
+      ->default_val(freq);
+  app.add_option("--sample_rate,-s", sample_rate, "Sample rate (> 0.5 Msps)")
+      ->default_val(sample_rate);
+  app.add_option("--lna", lna, "Low Noise Amplifier Gain 0 ... 30 dB")
+      ->default_val(lna);
+  app.add_option("--tia", tia, "Trans Impedance Amplifier Gain [0,9,12] dB")
+      ->default_val(tia);
+  app.add_option("--pga", pga, "Programmable Gain Amplifier -12 ... 19 dB")
+      ->default_val(pga);
 
-    try{
-        app.parse(argc, argv);
-        spdlog::set_level(spdlog::level::from_str(loglevel));
-        spdlog::flush_on(spdlog::get_level());
-        lime::registerLogHandler(limeSuiteLogHandler);
+  LimeSDR_Mini *dev = nullptr;
+  int main_exit = EXIT_SUCCESS;
 
-        info("{} started, loglevel is {}", app.get_name(), loglevel);
+  try {
+    app.parse(argc, argv);
+    spdlog::set_level(spdlog::level::from_str(loglevel));
+    spdlog::flush_on(spdlog::get_level());
+    lime::registerLogHandler(limeSuiteLogHandler);
 
-        debug("device hint is: [{}]", hint.Serialize());
-        for (auto& dh : DeviceRegistry::enumerate(hint)) {
-            debug("trying to open {}, {}", dh.name, dh.serial);
-            SDRDevice* d = DeviceRegistry::makeDevice(dh);
-            if (nullptr != d) {
-                dev = dynamic_cast<LimeSDR_Mini*>(d);
-                if (nullptr == dev) {
-                    debug("device is not a LimeSDR Mini");
-                    DeviceRegistry::freeDevice(d);
-                } else
-                    break;
-            }
+    info("{} started, loglevel is {}", app.get_name(), loglevel);
+
+    debug("device hint is: [{}]", hint.Serialize());
+    for (auto &dh : DeviceRegistry::enumerate(hint)) {
+      debug("trying to open {}, {}", dh.name, dh.serial);
+      SDRDevice *d = DeviceRegistry::makeDevice(dh);
+      if (nullptr != d) {
+        dev = dynamic_cast<LimeSDR_Mini *>(d);
+        if (nullptr == dev) {
+          debug("device is not a LimeSDR Mini");
+          DeviceRegistry::freeDevice(d);
+        } else
+          break;
+      }
+    }
+    if (nullptr == dev)
+      warn("could not open a device");
+    else {
+      dstlnk = dst;
+      dstlnk.replace_extension(".c32_le");
+      dst += format("_{:%Y-%m-%dT%H_%M_%S}.c32_le", system_clock::now());
+      info("Filename for saving: {}", dst.string());
+      info("Carrier frequency {:.2f} MHz", freq / 1e6);
+      info("Sample rate {:.3f} MHz", sample_rate / 1e6);
+      info("LNA: {:.1f} dB", lna);
+      info("TIA: {:.1f} dB", tia);
+      info("PGA: {:.1f} dB", pga);
+
+      dev->SetMessageLogCallback(limeSuiteLogHandler);
+      dev->Init();
+
+      lime::SDRConfig cfg;
+      {
+        lime::ChannelConfig &ch{cfg.channel[0]};
+
+        ch.rx.enabled = true;
+        ch.rx.centerFrequency = freq;
+        ch.rx.sampleRate = sample_rate;
+        ch.rx.oversample = 1 << 5;
+        ch.rx.lpf = 2.5e6;
+        ch.rx.path = 3;
+        ch.rx.calibrate = lime::CalibrationFlag::NONE;
+        ch.rx.testSignal.enabled = false;
+        ch.rx.gain[lime::eGainTypes::LNA] = lna; // 0 ... 30
+        ch.rx.gain[lime::eGainTypes::TIA] = tia; // 0, 9, 12
+        ch.rx.gain[lime::eGainTypes::PGA] = pga; // -12 ... 19
+        ch.rx.gfir.enabled = true;
+        ch.rx.gfir.bandwidth = 1.9e6;
+
+        ch.tx.enabled = false;
+        ch.tx.centerFrequency = freq;
+        ch.tx.sampleRate = sample_rate;
+        ch.tx.oversample = 1 << 5;
+        ch.tx.lpf = 5.5e6;
+        ch.tx.path = 2;
+        ch.tx.calibrate = lime::CalibrationFlag::NONE;
+        ch.tx.testSignal.enabled = false;
+        ch.tx.gain[lime::eGainTypes::IAMP] = 1.0;
+        ch.tx.gain[lime::eGainTypes::PAD] = 0.0;
+      }
+      cfg.skipDefaults = false;
+
+      ops = dev->Configure(cfg, 0);
+      if (lime::OpStatus::Success != ops) {
+        cout << unsigned(ops) << endl;
+      }
+
+      lime::StreamConfig strcfg;
+      strcfg.channels[lime::TRXDir::Rx] = {0};
+      strcfg.channels[lime::TRXDir::Tx] = {0};
+      strcfg.format = lime::DataFormat::F32;
+      strcfg.linkFormat = lime::DataFormat::I12;
+
+      strcfg.extraConfig.rx.packetsInBatch = 16;
+      unique_ptr<RFStream> stream = dev->StreamCreate(strcfg, 0);
+      stream->Start();
+
+      vector<complex<float>> rx_buffer(2048);
+      StreamRxMeta rx_meta;
+
+      uint64_t timestamp_expected = 0;
+      uint64_t timestamp_anchor = 0;
+
+      complex<float> last_sample;
+      ofstream out(dst, ios::out | ios::binary);
+      remove(dstlnk);
+      create_symlink(dst, dstlnk);
+
+      info("Start streaming");
+      while (0 == signal_status) {
+        complex<float> *rx_wrap[1]{rx_buffer.data()};
+        uint32_t rc = stream->Receive(rx_wrap, rx_buffer.size(), &rx_meta);
+        if (rx_buffer.size() > rc)
+          cout << "rx underrun" << endl;
+        write(out, rx_buffer);
+        uint64_t rx_timestamp = rx_meta.timestamp.GetTicks();
+        if (timestamp_expected > rx_timestamp) {
+          cout << format("TS: {}, expected: +{}\n", rx_timestamp,
+                         timestamp_expected - rx_timestamp);
+        } else if (timestamp_expected < rx_timestamp) {
+          cout << format("TS: {}, expected: -{}, length: {}\n", rx_timestamp,
+                         rx_timestamp - timestamp_expected,
+                         timestamp_expected - timestamp_anchor);
+          timestamp_anchor = rx_timestamp;
         }
-        if (nullptr == dev)
-            warn("could not open a device");
-        else {
-            dst += format("_{:%Y-%m-%dT%H%M%S}.c32_le", system_clock::now());
-            info("Filename for saving: {}", dst.string());
-            info("Carrier frequency {:.2f} MHz", freq/1e6);
-            info("Sample rate {:.3f} MHz", sample_rate/1e6);
+        timestamp_expected = rx_timestamp + rx_buffer.size();
+        last_sample = rx_buffer.back();
+      }
+      out.close();
+      info("Streaming stopped");
 
-            dev->SetMessageLogCallback(limeSuiteLogHandler);
-            dev->Init();
-            lime::SDRConfig cfg;
-            {
-                lime::ChannelConfig& ch{cfg.channel[0]};
-
-                ch.rx.enabled = true;
-                ch.rx.centerFrequency = freq;
-                ch.rx.sampleRate = sample_rate;
-                ch.rx.oversample = 2;
-                ch.rx.lpf = 0;
-                ch.rx.path = 3;
-                ch.rx.calibrate = lime::CalibrationFlag::NONE;
-                ch.rx.testSignal.enabled = false;
-                ch.rx.gain[lime::eGainTypes::LNA] = 30.0;
-                // ch.rx.gain[lime::eGainTypes::TIA] = 1.0;
-                // ch.rx.gain[lime::eGainTypes::PGA] = 1.0;
-                // ch.rx.gain[lime::eGainTypes::PAD] = 1.0;
-                // ch.rx.gain[lime::eGainTypes::IAMP] = 1.0;
-                // ch.rx.gain[lime::eGainTypes::PA] = 1.0;
-
-                ch.tx.enabled = false;
-                ch.tx.centerFrequency = freq;
-                ch.tx.sampleRate = sample_rate;
-                ch.tx.oversample = 3;
-                ch.tx.path = 2;
-                ch.tx.calibrate = lime::CalibrationFlag::NONE;
-                ch.tx.testSignal.enabled = false;
-            }
-            lime::StreamConfig strcfg;
-
-            strcfg.channels[lime::TRXDir::Rx] = { 0 };
-            strcfg.channels[lime::TRXDir::Tx] = { 0 };
-            strcfg.format = lime::DataFormat::F32;
-            strcfg.linkFormat = lime::DataFormat::I16;
-
-            strcfg.extraConfig.rx.packetsInBatch = 16;
-
-            vector<complex<float>> rx_buffer(2048);
-            StreamRxMeta rx_meta;
-
-            os = dev->Configure(cfg, 0);
-            if (lime::OpStatus::Success != os) {
-                cout << unsigned(os) << endl;
-            }
-
-            unique_ptr<RFStream> stream = dev->StreamCreate(strcfg, 0);
-            stream->Start();
-
-            uint64_t timestamp_expected = 0;
-            uint64_t timestamp_anchor = 0;
-
-            complex<float> last_sample;
-            ofstream out(dst, ios::out|ios::binary);
-            info("Start streaming");
-            while (0 == signal_status) {
-                lime::complex32f_t* rx_wrap[1] {reinterpret_cast<lime::complex32f_t*>(rx_buffer.data())};
-                uint32_t rc = stream->Receive(rx_wrap, rx_buffer.size(), &rx_meta);
-                //out.write(reinterpret_cast<char*>(rx_buffer.data()), sizeof(complex<float>)*rx_buffer.size());
-                if (rx_buffer.size() > rc) cout << "rx underrun" << endl;
-                uint64_t rx_timestamp = rx_meta.timestamp.GetTicks();
-                if (timestamp_expected > rx_timestamp) {
-                    cout << format("TS: {}, expected: +{}\n", rx_timestamp, timestamp_expected - rx_timestamp);
-                } else if (timestamp_expected < rx_timestamp) {
-                    cout << format("TS: {}, expected: -{}, length: {}\n", rx_timestamp, rx_timestamp - timestamp_expected, timestamp_expected - timestamp_anchor);
-                    timestamp_anchor = rx_timestamp;
-                 }
-                timestamp_expected = rx_timestamp + rx_buffer.size();
-                 last_sample = rx_buffer.back();
-            }
-            out.close();
-            info("Streaming stopped");
-
-            stream->Stop();
-            stream->Teardown();
-            stream.reset();
-        }
-
-    } catch (const CLI::ParseError& e) {
-        main_exit = app.exit(e);
-    } catch (const exception& e) {
-        critical("{}", e.what());
-        main_exit = EXIT_FAILURE;
-    } catch (...) {
-        critical("Exception of unknown type");
-        main_exit = EXIT_FAILURE;
+      stream->Stop();
+      stream->Teardown();
+      stream.reset();
+      dev->Reset();
     }
 
-    if (nullptr != dev) {
-        debug("closing device");
-        DeviceRegistry::freeDevice(dev);
-    }
+  } catch (const CLI::ParseError &e) {
+    main_exit = app.exit(e);
+  } catch (const exception &e) {
+    critical("{}", e.what());
+    main_exit = EXIT_FAILURE;
+  } catch (...) {
+    critical("Exception of unknown type");
+    main_exit = EXIT_FAILURE;
+  }
 
-    return main_exit;
+  if (nullptr != dev) {
+    debug("closing device");
+    DeviceRegistry::freeDevice(dev);
+  }
+
+  return main_exit;
 }
