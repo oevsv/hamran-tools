@@ -87,4 +87,10 @@ add_subdirectory(spdlog EXCLUDE_FROM_ALL)
 message(STATUS "Configure cpp-terminal")
 add_subdirectory(cpp-terminal EXCLUDE_FROM_ALL)
 
+##
+## libtuntap
+##
+
+message(STATUS "Configure libtuntap")
+add_subdirectory(libtuntap EXCLUDE_FROM_ALL)
 

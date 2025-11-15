@@ -21,3 +21,6 @@
 [submodule "extern/liquid-dsp"]
 	path = extern/liquid-dsp
 	url = https://github.com/oe1rsa/liquid-dsp.git
+[submodule "extern/libtuntap"]
+	path = extern/libtuntap
+	url = https://github.com/LaKabane/libtuntap.git

@@ -77,8 +77,25 @@ target_link_libraries(hrbeacon
     Boost::system
 )
 
-install(TARGETS lm2-gpio lm2-iqrx lm2-iqtx lm2-singen hrbeacon
+add_executable(hrtun
+    hrtun.cpp
+)
+
+target_link_libraries(hrtun
+    gitflow
+    tuntap++
+    spdlog
+)
+
+install(TARGETS
+    lm2-gpio
+    lm2-iqrx
+    lm2-iqtx
+    lm2-singen
+    hrbeacon
+    hrtun
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+
 
