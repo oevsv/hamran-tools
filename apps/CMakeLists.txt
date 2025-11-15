@@ -59,7 +59,12 @@ target_link_libraries(lm2-singen
     spdlog
 )
 
-add_executable(hrbeacon hrbeacon.cpp)
+add_executable(hrbeacon
+    limeutil.hpp
+    grcudp.hpp
+    hrbeacon.cpp
+    grcudp.cpp
+)
 
 target_link_libraries(hrbeacon
     gitflow
@@ -68,6 +73,8 @@ target_link_libraries(hrbeacon
     CLI11::CLI11
     platform_folders
     spdlog
+    Boost::headers
+    Boost::system
 )
 
 install(TARGETS lm2-gpio lm2-iqrx lm2-iqtx lm2-singen hrbeacon

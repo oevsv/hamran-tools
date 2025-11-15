@@ -25,15 +25,21 @@ using spdlog::trace, spdlog::debug, spdlog::info, spdlog::warn, spdlog::error,
 using lime::DeviceRegistry, lime::DeviceHandle, lime::SDRDevice, lime::RFStream,
     lime::OpStatus;
 
-#include "limesuiteng/StreamMeta.h"
+#include <limesuiteng/StreamMeta.h>
 using lime::StreamRxMeta, lime::StreamTxMeta;
 
-#include "boards/LimeSDR_Mini/LimeSDR_Mini.h"
+#include <boards/LimeSDR_Mini/LimeSDR_Mini.h>
 using lime::LimeSDR_Mini;
+
+#include "limeutil.hpp"
+using lime::util::limeSuiteLogHandler, lime::util::stream_clock;
+
+#include "grcudp.hpp"
 
 #include <clocale>
 using std::setlocale, std::locale;
 
+#include <cstdint>
 #include <cstdlib>
 
 #include <csignal>
@@ -51,8 +57,12 @@ using std::atomic;
 #include <chrono>
 using std::chrono::high_resolution_clock, std::chrono::duration_cast,
     std::chrono::nanoseconds, std::chrono::milliseconds,
-    std::chrono::system_clock;
+    std::chrono::microseconds, std::chrono::system_clock,
+    std::chrono::time_point_cast;
 using namespace std::literals::chrono_literals;
+
+#include <ratio>
+using std::ratio;
 
 #include <iostream>
 using std::cout, std::cin, std::endl, std::flush, std::ostream;
@@ -73,6 +83,9 @@ using std::string, std::getline;
 #include <algorithm>
 using std::min;
 
+#include <functional>
+using std::ref;
+
 #include <format>
 using std::format;
 
@@ -84,44 +97,29 @@ using std::runtime_error;
 
 namespace {
 
-void limeSuiteLogHandler(const lime::LogLevel level, const string &message) {
-  switch (level) {
-  case lime::LogLevel::Critical:
-    critical("lime: {}", message);
-    break;
-  case lime::LogLevel::Error:
-    error("lime: {}", message);
-    break;
-  case lime::LogLevel::Warning:
-    warn("lime: {}", message);
-    break;
-  case lime::LogLevel::Info:
-    info("lime: {}", message);
-    break;
-  case lime::LogLevel::Debug:
-    debug("lime: {}", message);
-    break;
-  case lime::LogLevel::Verbose:
-    trace("lime: {}", message);
-    break;
-  }
-}
-
 volatile sig_atomic_t signal_status = 0;
 void signal_handler(int signal) { signal_status = signal; }
 
 } // namespace
 
-const double sample_rate = 4e6;  // Hz
-const double txant_pre = 37e-6;  // s
-const double txant_post = 37e-6; // s
+const uint64_t sample_rate = 4'000'000; // Hz
+const double txant_pre = 37e-6;         // s
+const double txant_post = 37e-6;        // s
 
 string message; // the beacon text
 mutex message_mutex;
 atomic<bool> is_interactive = true;
 
-void transmit(stop_token stoken, RFStream *tx_stream, double tone) {
+void transmit(stop_token stoken, RFStream &tx_stream, double tone) {
   debug("tx thread started");
+
+  stream_clock<sample_rate> sclock(tx_stream);
+  system_clock wclock;
+  auto start = wclock.now();
+  auto dt = sclock.now() - start;
+  auto dt_min = dt;
+  auto dt_max = dt;
+
   const size_t frame_ticks = sample_rate * 10e-3;
 
   vector<complex<float>> tx_buffer(1024);
@@ -132,16 +130,10 @@ void transmit(stop_token stoken, RFStream *tx_stream, double tone) {
   complex<double> y = conj(w);
 
   const size_t frame_size = 20'000;
-  tx_meta.timestamp.AddTicks(1000 * frame_ticks);
 
   while (!stoken.stop_requested()) {
 
-    tx_meta.timestamp.AddTicks(2 * frame_ticks);
-
-    // cout << format("{:.2f} {:.2f}", tx_meta.timestamp.GetTicks() /
-    // sample_rate,
-    //                tx_stream->GetHardwareTimestamp() / sample_rate)
-    //      << endl;
+    tx_meta.timestamp.AddTicks(frame_ticks);
 
     tx_meta.hasTimestamp = true;
     tx_meta.flags = 0;
@@ -152,7 +144,7 @@ void transmit(stop_token stoken, RFStream *tx_stream, double tone) {
       for (size_t n = 0; n < tx_buffer.size(); ++n)
         tx_buffer[n] = 1.0 * (y *= w);
       complex<float> *tx_wrap[1]{tx_buffer.data()};
-      count = tx_stream->Transmit(tx_wrap, tx_buffer.size(), &tx_meta);
+      count = tx_stream.Transmit(tx_wrap, tx_buffer.size(), &tx_meta);
       if (0 == count) {
         warn("queue full, waiting for 100ms");
         sleep_for(100ms);
@@ -169,7 +161,7 @@ void transmit(stop_token stoken, RFStream *tx_stream, double tone) {
     tx_meta.flags = StreamTxMeta::EndOfBurst;
     while (pending_size > 0) {
       complex<float> *tx_wrap[1]{tx_buffer.data()};
-      count = tx_stream->Transmit(tx_wrap, pending_size, &tx_meta);
+      count = tx_stream.Transmit(tx_wrap, pending_size, &tx_meta);
       if (0 == count) {
         warn("queue full, waiting for 100ms");
         sleep_for(100ms);
@@ -178,22 +170,49 @@ void transmit(stop_token stoken, RFStream *tx_stream, double tone) {
       }
       pending_size -= count;
     }
+    dt = sclock.now() - wclock.now();
+    if (dt < dt_min) {
+      auto stop = wclock.now();
+      cout << "min: " << duration_cast<nanoseconds>(dt).count() * 1e-6
+           << "ms nach "
+           << duration_cast<nanoseconds>(stop - start).count() * 1e-9 << "s"
+           << endl;
+      dt_min = dt;
+    }
+    if (dt > dt_max) {
+      auto stop = wclock.now();
+      cout << "max: " << duration_cast<nanoseconds>(dt).count() * 1e-6
+           << "ms nach "
+           << duration_cast<nanoseconds>(stop - start).count() * 1e-9 << "s"
+           << endl;
+      dt_max = dt;
+    }
   }
+  auto stop = wclock.now();
+  cout << "min: " << duration_cast<nanoseconds>(dt_min).count() * 1e-6
+       << "ms nach " << duration_cast<nanoseconds>(stop - start).count() * 1e-9
+       << "s" << endl;
+  cout << "max: " << duration_cast<nanoseconds>(dt_max).count() * 1e-6
+       << "ms nach " << duration_cast<nanoseconds>(stop - start).count() * 1e-9
+       << "s" << endl;
+  cout << "time: " << duration_cast<nanoseconds>(stop - start).count() * 1e-9
+       << "s" << endl;
 
   debug("tx thread stopping");
 }
 
-void receive(stop_token stoken, RFStream *rx_stream) {
+void receive(stop_token stoken, RFStream &rx_stream) {
   debug("rx thread started");
 
   vector<complex<float>> rx_buffer(1024);
   StreamRxMeta rx_meta;
+  grcudp sock("127.0.0.1", 2000);
 
   while (!stoken.stop_requested()) {
     complex<float> *rx_wrap[1]{rx_buffer.data()};
-    uint32_t rc = rx_stream->Receive(rx_wrap, rx_buffer.size(), &rx_meta);
-    if (rx_buffer.size() > rc)
-      cout << "rx underrun" << endl;
+    rx_stream.Receive(rx_wrap, rx_buffer.size(), &rx_meta);
+    // send to udp port, so it can be read with gnuradio
+    sock.send(rx_buffer.data(), rx_buffer.size());
   }
 
   debug("rx thread stopping");
@@ -369,8 +388,8 @@ int main(int argc, char **argv) {
         is_interactive = false;
       }
 
-      jthread rx_thread(receive, stream.get());
-      jthread tx_thread(transmit, stream.get(), tone);
+      jthread rx_thread(receive, ref(*stream.get()));
+      jthread tx_thread(transmit, ref(*stream.get()), tone);
 
       if (is_interactive) {
         cout << "Beacon control thread: interactive mode, enter message or EOF "
@@ -396,51 +415,6 @@ int main(int argc, char **argv) {
         }
         info("Caught signal {}, exiting ...", signal_status);
       }
-
-      // vector<complex<float>> tx_buffer(1024);
-      // vector<complex<float>> rx_buffer(tx_buffer.size());
-
-      // StreamRxMeta rx_meta;
-      // StreamTxMeta tx_meta;
-
-      // complex<double> w = exp(2.0i * acos(-1) * double(tone / sample_rate));
-      // // Initialize the oscillator:
-      // complex<double> y = conj(w);
-
-      // double on = 1.0;
-      // size_t count_on = 0;
-      // size_t count_off = 0;
-      // // while (0 == signal_status) {
-      //   complex<float> *rx_wrap[1]{rx_buffer.data()};
-      //   uint32_t rc = stream->Receive(rx_wrap, rx_buffer.size(), &rx_meta);
-      //   if (rx_buffer.size() > rc)
-      //     cout << "rx underrun" << endl;
-
-      //   tx_meta.timestamp =
-      //       rx_meta.timestamp + 2 * rx_buffer.size() / sample_rate;
-      //   tx_meta.hasTimestamp = false;
-      //   tx_meta.flags = 0; // StreamTxMeta::EndOfBurst;
-
-      //   for (size_t n = 0; n < tx_buffer.size(); ++n) {
-      //     if (0.0 != on) {
-      //       if (++count_on > size_t(5e-3 * sample_rate)) {
-      //         count_on = 0;
-      //         on = 0.0;
-      //       }
-      //     } else {
-      //       if (++count_off > size_t(25e-3 * sample_rate)) {
-      //         count_off = 0;
-      //         on = 1.0;
-      //       }
-      //     }
-      //     tx_buffer[n] = on * (y *= w);
-      //   }
-
-      //   complex<float> *tx_wrap[1]{tx_buffer.data()};
-      //   uint32_t tc = stream->Transmit(tx_wrap, tx_buffer.size(), &tx_meta);
-      //   if (tx_buffer.size() > tc)
-      //     cout << "tx overrun" << endl;
-      // }
 
       tx_thread.request_stop();
       tx_thread.join();

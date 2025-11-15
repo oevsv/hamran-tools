@@ -15,6 +15,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(GitFlow)
 include(GNUInstallDirs)
 
+find_package(Boost COMPONENTS headers system REQUIRED)
+
+if (WIN32)
+    link_libraries(ws2_32)
+endif()
+
 ##
 ## Set up the external projects
 ##
