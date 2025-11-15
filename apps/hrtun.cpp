@@ -32,7 +32,7 @@ int main(int argc, char **argv) {
     spdlog::set_level(spdlog::level::from_str(loglevel));
     spdlog::flush_on(spdlog::get_level());
 
-    tuntap::tuntap tun(TUNTAP_MODE_TUNNEL, 1);
+    tuntap::tuntap tun(TUNTAP_MODE_TUNNEL);
 
     cout << "interactive mode, enter message or EOF "
             "(Ctrl-D) or empty "
