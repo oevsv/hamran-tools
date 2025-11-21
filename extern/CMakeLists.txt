@@ -34,21 +34,32 @@ endforeach()
 ##
 
 message(STATUS "Configure LimeSuiteNG")
-set(ENABLE_DOXYGEN               OFF CACHE BOOL "preset for hamran-tools")
-set(BUILD_DOCS_DOXYGEN           OFF CACHE BOOL "preset for hamran-tools")
-set(BUILD_SHARED_LIBS            OFF CACHE BOOL "preset for hamran-tools")
-set(BUILD_CLI                    OFF CACHE BOOL "preset for hamran-tools")
-set(BUILD_DRIVERS_LIMEPCIE       OFF CACHE BOOL "preset for hamran-tools")
-set(BUILD_EXAMPLES               OFF CACHE BOOL "preset for hamran-tools")
-set(BUILD_GUI                    OFF CACHE BOOL "preset for hamran-tools")
-set(BUILD_CLI                    OFF CACHE BOOL "preset for hamran-tools")
-set(BUILD_PLUGINS                OFF CACHE BOOL "preset for hamran-tools")
-set(INSTALL_UDEV_RULES           OFF CACHE BOOL "preset for hamran-tools")
-set(UDEV_RULES_RELOAD_ON_INSTALL OFF CACHE BOOL "preset for hamran-tools")
-set(LIMEPCIE_INSTALL             OFF CACHE BOOL "preset for hamran-tools")
-set(LIMEPCIE_RELOAD_ON_INSTALL   OFF CACHE BOOL "preset for hamran-tools")
+set(ENABLE_DOXYGEN               OFF CACHE BOOL "preset for hamran-tools" FORCE)
+set(BUILD_DOCS_DOXYGEN           OFF CACHE BOOL "preset for hamran-tools" FORCE)
+set(BUILD_SHARED_LIBS            OFF CACHE BOOL "preset for hamran-tools" FORCE)
+set(BUILD_CLI                    OFF CACHE BOOL "preset for hamran-tools" FORCE)
+set(BUILD_DRIVERS_LIMEPCIE       OFF CACHE BOOL "preset for hamran-tools" FORCE)
+set(BUILD_EXAMPLES               OFF CACHE BOOL "preset for hamran-tools" FORCE)
+set(BUILD_GUI                    OFF CACHE BOOL "preset for hamran-tools" FORCE)
+set(BUILD_CLI                     ON CACHE BOOL "preset for hamran-tools" FORCE)
+set(BUILD_PLUGINS                OFF CACHE BOOL "preset for hamran-tools" FORCE)
+set(INSTALL_UDEV_RULES           OFF CACHE BOOL "preset for hamran-tools" FORCE)
+set(UDEV_RULES_RELOAD_ON_INSTALL OFF CACHE BOOL "preset for hamran-tools" FORCE)
+set(LIMEPCIE_INSTALL             OFF CACHE BOOL "preset for hamran-tools" FORCE)
+set(LIMEPCIE_RELOAD_ON_INSTALL   OFF CACHE BOOL "preset for hamran-tools" FORCE)
 set(CMAKE_POLICY_DEFAULT_CMP0135 NEW)
 add_subdirectory(LimeSuiteNG EXCLUDE_FROM_ALL)
+
+# selectively install  command line tools from limeSuiteNG
+add_custom_target(LimeSuiteNG_selective_all ALL)
+add_dependencies(LimeSuiteNG_selective_all limeFLASH)
+
+# rename the tool to avoid clash with upstream original
+set_target_properties(limeFLASH PROPERTIES OUTPUT_NAME lm2-FLASH)
+install(TARGETS
+    limeFLASH
+)
+
 
 ##
 ## liquid-dsp
