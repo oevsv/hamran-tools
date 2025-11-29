@@ -24,6 +24,3 @@
 [submodule "extern/libtuntap"]
 	path = extern/libtuntap
 	url = https://github.com/LaKabane/libtuntap.git
-[submodule "extern/libcorrect"]
-	path = extern/libcorrect
-	url = https://github.com/quiet/libcorrect.git
