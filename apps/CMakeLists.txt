@@ -20,7 +20,6 @@ add_executable(lm2-iqtx lm2-iqtx.cpp)
 target_link_libraries(lm2-iqtx
     gitflow
     limesuiteng::limesuiteng
-    liquid::liquid
     CLI11::CLI11
     cpp-terminal
     platform_folders
@@ -32,7 +31,6 @@ add_executable(lm2-iqrx lm2-iqrx.cpp)
 target_link_libraries(lm2-iqrx
     gitflow
     limesuiteng::limesuiteng
-    liquid::liquid
     CLI11::CLI11
     cpp-terminal
     platform_folders
@@ -64,6 +62,12 @@ add_executable(hrbeacon
     grcudp.hpp
     hrbeacon.cpp
     grcudp.cpp
+    keyer.hpp
+    morsecode.hpp
+    hamranfrm.hpp
+    keyer.cpp
+    morsecode.cpp
+    hamranfrm.cpp
 )
 
 target_link_libraries(hrbeacon

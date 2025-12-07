@@ -60,14 +60,36 @@ install(TARGETS
     limeFLASH
 )
 
-
 ##
 ## liquid-dsp
 ##
 
 message(STATUS "Configure liquid-dsp")
-set(liquid_SHARED_LIBS          OFF)
+
+#TODO: This is a hack, the upstream liquid-dsp should be fixed instead.
+set(liquid_SHARED_LIBS          OFF CACHE BOOL "preset for hamran-tools" FORCE)
+set(FIND_FFTW                   OFF CACHE BOOL "preset for hamran-tools" FORCE)
+
 add_subdirectory(liquid-dsp EXCLUDE_FROM_ALL)
+target_compile_options(fec PRIVATE "-DLIBFEC_ENABLED")
+
+find_library(FFTW3_LIBRARY
+  NAMES ${CMAKE_STATIC_LIBRARY_PREFIX}fftw3f${CMAKE_STATIC_LIBRARY_SUFFIX}
+  PATHS /usr/local/lib
+        /usr/lib
+)
+list(APPEND _LIBRARIES ${FFTW3_LIBRARY})
+
+find_library(fec_LIBRARY
+    NAMES ${CMAKE_STATIC_LIBRARY_PREFIX}fec${CMAKE_STATIC_LIBRARY_SUFFIX}
+    PATHS /usr/local/lib
+          /usr/lib
+)
+list(APPEND _LIBRARIES ${fec_LIBRARY})
+
+set_target_properties(liquid PROPERTIES
+    INTERFACE_LINK_LIBRARIES "${_LIBRARIES}"
+)
 
 ##
 ## CLI11
