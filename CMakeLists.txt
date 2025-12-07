@@ -7,13 +7,19 @@
 cmake_minimum_required(VERSION 3.16)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
-project(hamran-tools LANGUAGES C CXX VERSION 0.0.4)
+project(hamran-tools LANGUAGES C CXX VERSION 0.0.5)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(GitFlow)
 include(GNUInstallDirs)
+
+find_package(Boost COMPONENTS headers system REQUIRED)
+
+if (WIN32)
+    link_libraries(ws2_32)
+endif()
 
 ##
 ## Set up the external projects

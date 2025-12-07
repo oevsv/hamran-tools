@@ -7,7 +7,7 @@
 /*
  * A tool for generating a beacon signal based on the work of Marek Honek
  * in his master thesis: SDR OFDM Frame Generation according to IEEE 802.22.
- * https://doi.org/10.34726/hss.2022.74390, but heavily adapted by OE1RSA.
+ * https://doi.org/10.34726/hss.2022.74390, but adapted by OE1RSA.
  */
 
 #include "gitflow.hpp"
@@ -25,15 +25,23 @@ using spdlog::trace, spdlog::debug, spdlog::info, spdlog::warn, spdlog::error,
 using lime::DeviceRegistry, lime::DeviceHandle, lime::SDRDevice, lime::RFStream,
     lime::OpStatus;
 
-#include "limesuiteng/StreamMeta.h"
+#include <limesuiteng/StreamMeta.h>
 using lime::StreamRxMeta, lime::StreamTxMeta;
 
-#include "boards/LimeSDR_Mini/LimeSDR_Mini.h"
+#include <boards/LimeSDR_Mini/LimeSDR_Mini.h>
 using lime::LimeSDR_Mini;
+
+#include "limeutil.hpp"
+using lime::util::limeSuiteLogHandler, lime::util::stream_clock;
+
+#include "grcudp.hpp"
+#include "hamranfrm.hpp"
+#include "keyer.hpp"
 
 #include <clocale>
 using std::setlocale, std::locale;
 
+#include <cstdint>
 #include <cstdlib>
 
 #include <csignal>
@@ -48,14 +56,23 @@ using std::mutex;
 #include <atomic>
 using std::atomic;
 
+#include <ratio>
+using std::ratio;
+
 #include <chrono>
-using std::chrono::high_resolution_clock, std::chrono::duration_cast,
-    std::chrono::nanoseconds, std::chrono::milliseconds,
-    std::chrono::system_clock;
+using std::chrono::high_resolution_clock, std::chrono::system_clock,
+    std::chrono::duration_cast, std::chrono::nanoseconds,
+    std::chrono::milliseconds, std::chrono::microseconds,
+    std::chrono::system_clock, std::chrono::time_point_cast, std::chrono::ceil,
+    std::chrono::duration, std::chrono::clock_cast;
+using ten_milliseconds = std::chrono::duration<int64_t, ratio<1, 100>>;
 using namespace std::literals::chrono_literals;
 
 #include <iostream>
 using std::cout, std::cin, std::endl, std::flush, std::ostream;
+
+#include <cmath>
+using std::sqrt;
 
 #include <complex>
 using std::complex, std::abs, std::conj, std::exp;
@@ -67,11 +84,17 @@ using std::unique_ptr;
 #include <vector>
 using std::vector;
 
+#include <format>
+using std::format;
+
 #include <string>
 using std::string, std::getline;
 
 #include <algorithm>
 using std::min;
+
+#include <functional>
+using std::ref;
 
 #include <format>
 using std::format;
@@ -84,116 +107,153 @@ using std::runtime_error;
 
 namespace {
 
-void limeSuiteLogHandler(const lime::LogLevel level, const string &message) {
-  switch (level) {
-  case lime::LogLevel::Critical:
-    critical("lime: {}", message);
-    break;
-  case lime::LogLevel::Error:
-    error("lime: {}", message);
-    break;
-  case lime::LogLevel::Warning:
-    warn("lime: {}", message);
-    break;
-  case lime::LogLevel::Info:
-    info("lime: {}", message);
-    break;
-  case lime::LogLevel::Debug:
-    debug("lime: {}", message);
-    break;
-  case lime::LogLevel::Verbose:
-    trace("lime: {}", message);
-    break;
-  }
-}
-
 volatile sig_atomic_t signal_status = 0;
 void signal_handler(int signal) { signal_status = signal; }
 
 } // namespace
 
-const double sample_rate = 4e6;  // Hz
-const double txant_pre = 37e-6;  // s
-const double txant_post = 37e-6; // s
+const uint64_t sample_rate = 4'000'000; // Hz
+const double txant_pre = 37e-6;         // s
+const double txant_post = 37e-6;        // s
 
-string message; // the beacon text
+string global_message; // the beacon text
 mutex message_mutex;
-atomic<bool> is_interactive = true;
 
-void transmit(stop_token stoken, RFStream *tx_stream, double tone) {
+void transmit(stop_token stoken, RFStream &tx_stream, double tone,
+              double duration, bool is_interactive, size_t cpf,
+              size_t phy_mode) {
+
   debug("tx thread started");
-  const size_t frame_ticks = sample_rate * 10e-3;
 
-  vector<complex<float>> tx_buffer(1024);
-  StreamTxMeta tx_meta;
+  stream_clock<sample_rate> sclock(tx_stream);
 
+  // Set up the OFDM frame
+  unsigned char header[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  hrframegen fg(sample_rate, -11, cpf, phy_mode);
+
+  double sinamp = sqrt(0.5);
+  // Set up the CW keyer
+  keyer k(80, tone, 0, sinamp, sample_rate);
+
+  // Set up the oscillator
   complex<double> w = exp(2.0i * acos(-1) * double(tone / sample_rate));
-  // Initialize the oscillator:
   complex<double> y = conj(w);
 
-  const size_t frame_size = 20'000;
-  tx_meta.timestamp.AddTicks(1000 * frame_ticks);
+  // const size_t frame_size = 20'000;
+
+  // The transmit buffer
+  vector<complex<float>> tx_buffer(fg.subcarriers + fg.prefix_len);
+  StreamTxMeta tx_meta;
+
+  // The total cycle counter
+  unsigned int count = 0;
+
+  // Message captured and transfered to thread
+  string message;
 
   while (!stoken.stop_requested()) {
-
-    tx_meta.timestamp.AddTicks(2 * frame_ticks);
-
-    // cout << format("{:.2f} {:.2f}", tx_meta.timestamp.GetTicks() /
-    // sample_rate,
-    //                tx_stream->GetHardwareTimestamp() / sample_rate)
-    //      << endl;
-
-    tx_meta.hasTimestamp = true;
-    tx_meta.flags = 0;
-
-    size_t pending_size = frame_size;
-    size_t count;
-    while (pending_size > tx_buffer.size()) {
-      for (size_t n = 0; n < tx_buffer.size(); ++n)
-        tx_buffer[n] = 1.0 * (y *= w);
-      complex<float> *tx_wrap[1]{tx_buffer.data()};
-      count = tx_stream->Transmit(tx_wrap, tx_buffer.size(), &tx_meta);
-      if (0 == count) {
-        warn("queue full, waiting for 100ms");
-        sleep_for(100ms);
-        if (stoken.stop_requested())
-          break;
-      }
-      pending_size -= count;
-      tx_meta.hasTimestamp = false;
+    if (!is_interactive) {
+      info("count: {:6d}", ++count);
     }
 
-    for (size_t n = 0; n < pending_size; ++n)
-      tx_buffer[n] = 1.0 * (y *= w);
+    // Capture the message
+    message_mutex.lock();
+    message = global_message;
+    message_mutex.unlock();
 
-    tx_meta.flags = StreamTxMeta::EndOfBurst;
-    while (pending_size > 0) {
-      complex<float> *tx_wrap[1]{tx_buffer.data()};
-      count = tx_stream->Transmit(tx_wrap, pending_size, &tx_meta);
-      if (0 == count) {
-        warn("queue full, waiting for 100ms");
-        sleep_for(100ms);
-        if (stoken.stop_requested())
-          break;
+    k.send(message);
+
+    tx_meta.hasTimestamp = false;
+    tx_meta.flags = 0;
+
+    size_t total_samples = 0;
+
+    // Key the CW signal
+    size_t size = k.get_frame(tx_buffer.data(), tx_buffer.size());
+    while (0 < size && !stoken.stop_requested()) {
+      while (0 < size && !stoken.stop_requested()) {
+        complex<float> *tx_wrap[1]{tx_buffer.data()};
+        size -= tx_stream.Transmit(tx_wrap, size, &tx_meta);
       }
-      pending_size -= count;
+      size = k.get_frame(tx_buffer.data(), tx_buffer.size());
+    }
+
+    // Send silence for 1 second
+    for (size_t n = 0; n < tx_buffer.size(); ++n)
+      tx_buffer[n] = 0.0;
+    total_samples = sample_rate;
+    while (0 < total_samples && !stoken.stop_requested()) {
+      size_t samples_to_send = min(total_samples, tx_buffer.size());
+      total_samples -= samples_to_send;
+      while (0 < samples_to_send && !stoken.stop_requested()) {
+        complex<float> *tx_wrap[1]{tx_buffer.data()};
+        samples_to_send -=
+            tx_stream.Transmit(tx_wrap, samples_to_send, &tx_meta);
+      }
+    }
+
+    // Send a sine tone for duration seconds
+    total_samples = duration * sample_rate;
+    while (0 < total_samples && !stoken.stop_requested()) {
+      size_t samples_to_send = min(total_samples, tx_buffer.size());
+      total_samples -= samples_to_send;
+      for (size_t n = 0; n < samples_to_send; ++n)
+        tx_buffer[n] = sinamp * (y *= w);
+      while (0 < samples_to_send && !stoken.stop_requested()) {
+        complex<float> *tx_wrap[1]{tx_buffer.data()};
+        samples_to_send -=
+            tx_stream.Transmit(tx_wrap, samples_to_send, &tx_meta);
+      }
+    }
+
+    // Wait until all samples have been sent
+    lime::StreamStats rxStats, txStats;
+    tx_stream.StreamStatus(&rxStats, &txStats);
+    while (txStats.FIFO.usedCount > 0 && !stoken.stop_requested()) {
+      sleep_for(1s * tx_buffer.size() / double(sample_rate));
+      tx_stream.StreamStatus(&rxStats, &txStats);
+    }
+
+    // Send OFDM frames
+
+    auto t_next = ceil<ten_milliseconds>(sclock.now()) + 50ms;
+
+    for (int n = 0; n < 1s / 10ms * duration && !stoken.stop_requested(); ++n) {
+      tx_meta.timestamp = sclock.to_lime(t_next);
+      tx_meta.hasTimestamp = true;
+      tx_meta.flags = 0;
+
+      fg.assemble(header, reinterpret_cast<unsigned char *>(message.data()),
+                  message.size());
+      bool last = fg.write(tx_buffer.data(), tx_buffer.size());
+      while (not last && !stoken.stop_requested()) {
+        complex<float> *tx_wrap[1]{tx_buffer.data()};
+        tx_stream.Transmit(tx_wrap, tx_buffer.size(), &tx_meta);
+        last = fg.write(tx_buffer.data(), tx_buffer.size());
+        tx_meta.hasTimestamp = false;
+      }
+      tx_meta.flags = StreamTxMeta::EndOfBurst;
+      complex<float> *tx_wrap[1]{tx_buffer.data()};
+      tx_stream.Transmit(tx_wrap, tx_buffer.size(), &tx_meta);
+      t_next += 10ms;
     }
   }
 
   debug("tx thread stopping");
 }
 
-void receive(stop_token stoken, RFStream *rx_stream) {
+void receive(stop_token stoken, RFStream &rx_stream) {
   debug("rx thread started");
 
   vector<complex<float>> rx_buffer(1024);
   StreamRxMeta rx_meta;
+  grcudp sock("127.0.0.1", 2000);
 
   while (!stoken.stop_requested()) {
     complex<float> *rx_wrap[1]{rx_buffer.data()};
-    uint32_t rc = rx_stream->Receive(rx_wrap, rx_buffer.size(), &rx_meta);
-    if (rx_buffer.size() > rc)
-      cout << "rx underrun" << endl;
+    rx_stream.Receive(rx_wrap, rx_buffer.size(), &rx_meta);
+    // send to udp port, so it can be read with gnuradio
+    sock.send(rx_buffer.data(), rx_buffer.size());
   }
 
   debug("rx thread stopping");
@@ -204,6 +264,7 @@ int main(int argc, char **argv) {
   signal(SIGINT, signal_handler);
   signal(SIGTERM, signal_handler);
 
+  bool is_interactive = true;
   CLI::App app{"hrbeacon: transmit a HAMRAN beacon."};
   argv = app.ensure_utf8(argv);
 
@@ -214,13 +275,13 @@ int main(int argc, char **argv) {
   // The following parameters can be configured at runtime
   double freq = 53e6;   // Hz
   double txpwr = 11;    // dBm
-  double tone = 0;      // Hz
+  double tone = 441;    // Hz
   double duration = 10; // s
   double lna = 30.0;    // dB, RX: Low Noise Amplifier gain
   double tia = 9.0;     // dB, RX: Trans Impedance Amplifier Gain
   double pga = 0.0;     // dB, RX: Programmable Gain Amplifier
   double iamp = 11.0;   // TX: Current Amplifier
-  double pad = 40.0;    // dB, TX: Power Amplifier Driver
+  double pad = 47.0;    // dB, TX: Power Amplifier Driver
 
   app.footer("Interactive mode assumed if no message given.");
   app.set_config("--config", getConfigHome() + "/hamran-tools/hrbeacon.ini");
@@ -245,7 +306,7 @@ int main(int argc, char **argv) {
       ->default_val(iamp);
   app.add_option("--pad", pad, "TX: Power Amplifier Driver 5 ... 55")
       ->default_val(pad);
-  app.add_option("message", message, "beacon message text");
+  app.add_option("message", global_message, "beacon message text");
 
   LimeSDR_Mini *dev = nullptr;
   int main_exit = EXIT_SUCCESS;
@@ -317,27 +378,27 @@ int main(int argc, char **argv) {
         ch.rx.sampleRate = sample_rate;
         ch.rx.oversample = 1 << 5; // 32
         ch.rx.path = 3;            // RX1_W 0.03 - 1.9 GHz
-        ch.rx.lpf = 2.5e6;
+        ch.rx.lpf = 2e6;
         ch.rx.calibrate =
             lime::CalibrationFlag::DCIQ | lime::CalibrationFlag::FILTER;
         ch.rx.gain[lime::eGainTypes::LNA] = lna; // 0 ... 30
         ch.rx.gain[lime::eGainTypes::TIA] = tia; // 0, 9, 12
         ch.rx.gain[lime::eGainTypes::PGA] = pga; // -12 ... 19
         ch.rx.gfir.enabled = true;
-        ch.rx.gfir.bandwidth = 1.9e6;
+        ch.rx.gfir.bandwidth = 1.86e6;
 
         ch.tx.enabled = true;
         ch.tx.centerFrequency = freq;
         ch.tx.sampleRate = sample_rate;
         ch.tx.oversample = 1 << 5; // 32
         ch.tx.path = 2;            // TX1_2 0.03 - 1.9 GHz
-        ch.tx.lpf = 5.5e6;
+        ch.tx.lpf = 5.3e6;
         ch.tx.calibrate =
             lime::CalibrationFlag::DCIQ | lime::CalibrationFlag::FILTER;
         ch.tx.gain[lime::eGainTypes::IAMP] = iamp; // 24.0; // 0 ... 63
         ch.tx.gain[lime::eGainTypes::PAD] = pad;   // 44.0;  // 5 ... 55
         ch.tx.gfir.enabled = true;
-        ch.tx.gfir.bandwidth = 1.9e6;
+        ch.tx.gfir.bandwidth = 1.86e6;
       }
       cfg.skipDefaults = false;
 
@@ -361,30 +422,33 @@ int main(int argc, char **argv) {
       stream->Start();
 
       info("Start streaming");
-      if (message.empty()) {
+      if (global_message.empty()) {
         is_interactive = true;
-        message = "OE1XDU The quick brown fox jumps over the lazy dog.";
+        global_message = "OE1XDU The quick brown fox jumps over the lazy dog.";
       } else {
-        info("Beacon text: {}", message);
+        info("Beacon text: {}", global_message);
         is_interactive = false;
       }
 
-      jthread rx_thread(receive, stream.get());
-      jthread tx_thread(transmit, stream.get(), tone);
+      jthread rx_thread(receive, ref(*stream.get()));
+      jthread tx_thread(transmit, ref(*stream.get()), tone, duration,
+                        is_interactive, 5, 2);
 
       if (is_interactive) {
         cout << "Beacon control thread: interactive mode, enter message or EOF "
                 "(Ctrl-D) or empty "
                 "line to end."
              << endl;
-        cout << "Default text is: " << message << endl;
+        message_mutex.lock();
+        cout << "Default text is: " << global_message << endl;
+        message_mutex.unlock();
         string line;
         cout << "> " << flush;
         while (getline(cin, line)) {
           if (line.empty())
             break;
           message_mutex.lock();
-          message = line;
+          global_message = line;
           message_mutex.unlock();
           cout << "> " << flush;
         }
@@ -396,51 +460,6 @@ int main(int argc, char **argv) {
         }
         info("Caught signal {}, exiting ...", signal_status);
       }
-
-      // vector<complex<float>> tx_buffer(1024);
-      // vector<complex<float>> rx_buffer(tx_buffer.size());
-
-      // StreamRxMeta rx_meta;
-      // StreamTxMeta tx_meta;
-
-      // complex<double> w = exp(2.0i * acos(-1) * double(tone / sample_rate));
-      // // Initialize the oscillator:
-      // complex<double> y = conj(w);
-
-      // double on = 1.0;
-      // size_t count_on = 0;
-      // size_t count_off = 0;
-      // // while (0 == signal_status) {
-      //   complex<float> *rx_wrap[1]{rx_buffer.data()};
-      //   uint32_t rc = stream->Receive(rx_wrap, rx_buffer.size(), &rx_meta);
-      //   if (rx_buffer.size() > rc)
-      //     cout << "rx underrun" << endl;
-
-      //   tx_meta.timestamp =
-      //       rx_meta.timestamp + 2 * rx_buffer.size() / sample_rate;
-      //   tx_meta.hasTimestamp = false;
-      //   tx_meta.flags = 0; // StreamTxMeta::EndOfBurst;
-
-      //   for (size_t n = 0; n < tx_buffer.size(); ++n) {
-      //     if (0.0 != on) {
-      //       if (++count_on > size_t(5e-3 * sample_rate)) {
-      //         count_on = 0;
-      //         on = 0.0;
-      //       }
-      //     } else {
-      //       if (++count_off > size_t(25e-3 * sample_rate)) {
-      //         count_off = 0;
-      //         on = 1.0;
-      //       }
-      //     }
-      //     tx_buffer[n] = on * (y *= w);
-      //   }
-
-      //   complex<float> *tx_wrap[1]{tx_buffer.data()};
-      //   uint32_t tc = stream->Transmit(tx_wrap, tx_buffer.size(), &tx_meta);
-      //   if (tx_buffer.size() > tc)
-      //     cout << "tx overrun" << endl;
-      // }
 
       tx_thread.request_stop();
       tx_thread.join();
